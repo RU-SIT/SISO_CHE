@@ -6,6 +6,7 @@ import numpy as np
 from copy import deepcopy
 from learner import Learner
 import pdb
+from utils import Utils
 
 class Meta(nn.Module):
     def __init__(self, args, config):
@@ -18,7 +19,7 @@ class Meta(nn.Module):
         self.k_qry = args.k_qry
         self.batchsz =args.batchsz
         self.update_step = args.update_step
-        self.update_step_test = args.update_step_test
+        # self.update_step_test = args.update_step_test
 
         self.net = Learner(config)
         self.meta_optim = optim.Adam(self.net.parameters(), lr=self.meta_lr, weight_decay= 0.05)
@@ -90,77 +91,107 @@ class Meta(nn.Module):
 
         return losses_s
     
-    def finetunning(self, x_qry, y_qry, x_spt, y_spt):
-        # Ensure the inputs have the correct dimensions
-        querysz = x_qry.size(0)
-        
-        # Create a deepcopy of the network for fine-tuning
-        net = deepcopy(self.net)
-
-        # Initial forward pass
-        logits = net(x_qry)
-        logits = logits.view(x_qry.size())  
-        loss = F.mse_loss(logits, y_qry)
-
-        # Compute gradients and update fast weights
-        grad = torch.autograd.grad(loss, net.parameters())
-        fast_weights = list(map(lambda p: p[1] - self.update_lr * p[0], zip(grad, net.parameters())))
-
-        # Fine-tuning loop
-        for k in range(1, self.update_step_test):
-            logits = net(x_qry, fast_weights, bn_training=True)
-            logits = logits.view(x_qry.size())  
-            loss = F.mse_loss(logits, y_qry)
-            grad = torch.autograd.grad(loss, fast_weights)
-            fast_weights = list(map(lambda p: p[1] - self.update_lr * p[0], zip(grad, fast_weights)))
-
-            # Evaluate on support set
-            logits_s = net(x_spt, fast_weights, bn_training=True)
-            logits_s = logits_s.view(x_spt.size())  
-            loss_q = F.mse_loss(logits_s, y_spt)
-
-        del net  # Clean up
-
-        return loss_q
-
-    # def finetunning(self, x_qry, y_qry, x_spt, y_spt):
-    #     # assert len(x_spt.shape) == 4
-
-    #     querysz = x_qry.size(0)
-
-    #     net = deepcopy(self.net)
-    #     # pdb.set_trace()
-    #     logits = net(x_qry)
-    #     logits = logits.view(x_qry.size())  
-    #     loss = F.mse_loss(logits, y_qry)
-    #     grad = torch.autograd.grad(loss, net.parameters())
-    #     fast_weights = list(map(lambda p: p[1] - self.update_lr * p[0], zip(grad, net.parameters())))
-
-    #     with torch.no_grad():
-    #         logits_s = net(x_spt, net.parameters(), bn_training=True)
-    #         logits_s = logits_s.view(x_spt.size())  
-    #         loss_s = F.mse_loss(logits_s, y_spt)
-
-    #     with torch.no_grad():
-    #         logits_s = net(x_spt, fast_weights, bn_training=True)
-    #         logits_s = logits_s.view(x_spt.size())  
-    #         loss_s = F.mse_loss(logits_s, y_spt)
-
-    #     for k in range(1, self.update_step_test):
-    #         logits = net(x_qry, fast_weights, bn_training=True)
-    #         logits = logits.view(x_qry.size())  
-    #         loss = F.mse_loss(logits, y_qry)
-    #         grad = torch.autograd.grad(loss, fast_weights)
-    #         fast_weights = list(map(lambda p: p[1] - self.update_lr * p[0], zip(grad, fast_weights)))
-
-    #         logits_s = net(x_spt, fast_weights, bn_training=True)
-    #         logits_s = logits_s.view(x_spt.size())  
-    #         loss_q = F.mse_loss(logits_s, y_spt)
-
-    #     del net
-
-    #     return loss_q
     
+    
+    
+    def finetuning(self, optimizer, data, label, epochs, batchsz, device, patience=10, delta=1e-4, mode = 'train'):
+        """
+        Fine-tune the network on a single task.
+        :param data: Input data [batchsz, c_, h, w]
+        :param label: Target labels [batchsz, c_, h, w]
+        :param epochs: Number of fine-tuning epochs
+        :param batchsz: Batch size for fine-tuning
+        :param device: Device to run the computations on (CPU/GPU)
+        :return: Final loss after fine-tuning
+        """
+        # Create a deepcopy of the network for fine-tuning
+        # net = deepcopy(self.net).to(device)
+        
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.9)
+
+        self.net.train()
+        best_loss = float('inf')
+        epochs_no_improve = 0
+        
+        if mode =="train":
+            # Fine-tuning loop
+            for epoch in range(epochs):
+                epoch_loss = 0
+                for batch_data, batch_labels in self.batchify(data, label, batchsz):
+                    batch_data, batch_labels = batch_data.to(device), batch_labels.to(device)
+                    batch_data, _, _ = Utils.trch_unit_scaling(batch_data, batch_labels)
+                    
+                    # Forward pass
+                    logits = self.net(batch_data)
+                    logits = logits.view(batch_data.size())
+                    loss = F.mse_loss(logits, batch_labels)
+                    
+                    # Backward pass and optimization
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+
+                    epoch_loss += loss.item()
+
+                scheduler.step()
+
+                # Log epoch details
+                avg_loss = epoch_loss / len(data)  # Average loss over batches
+                print(f"Epoch [{epoch+1}/{epochs}], Loss: {avg_loss:.4f}")
+                    
+                    
+                    
+                if avg_loss < best_loss - delta:
+                    best_loss = avg_loss
+                    epochs_no_improve = 0  # Reset counter
+                else:
+                    epochs_no_improve += 1
+                    print(f"No improvement for {epochs_no_improve} epoch(s).")
+
+                # Early stopping
+                if epochs_no_improve >= patience:
+                    print(f"Early stopping at epoch {epoch+1}. Best loss: {best_loss:.4f}")
+                    break
+
+            return best_loss
+        
+        
+    def evaluate(self, eval_data, eval_labels, batchsz, device, save_path=None):
+        """
+        Evaluate the fine-tuned model on the evaluation set.
+        """
+        self.net.eval()
+        eval_loss = 0.0
+        all_predictions = []
+        with torch.no_grad():
+            for batch_data, batch_labels in self.batchify(eval_data, eval_labels, batchsz):
+                batch_data, batch_labels = batch_data.to(device), batch_labels.to(device)
+                batch_data, _, _ = Utils.trch_unit_scaling(batch_data, batch_labels)
+
+                logits = self.net(batch_data)
+                logits = logits.view(batch_data.size())
+                loss = F.mse_loss(logits, batch_labels)
+                eval_loss += loss.item()
+                
+                predictions = logits.cpu().numpy()
+                all_predictions.append(predictions)
+
+        avg_eval_loss = eval_loss / len(eval_data)
+        all_predictions = np.concatenate(all_predictions, axis=0)
+
+        avg_eval_loss = eval_loss / len(eval_data)
+        if save_path:
+            np.save(save_path, all_predictions)
+
+        return avg_eval_loss, all_predictions
+
+        
+    def batchify(self, data, labels, batch_size):
+        for i in range(0, len(data), batch_size):
+            batch_data = data[i:i + batch_size]
+            batch_labels = labels[i:i + batch_size]
+            yield batch_data, batch_labels
+        
     def predict(self, x):
         """
         Generate predictions for the given input using the current model weights.
