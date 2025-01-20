@@ -1,4 +1,4 @@
-# MyPrivaterepo
+# Few shot Channel Estimation 
 
 Welcome to this repository where we are exploring some new aspects of machine .ealrning in wireless communication domain. The main focuse of this work is SISO-OFDM Channel Estimation.
 
