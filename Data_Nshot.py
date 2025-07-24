@@ -6,12 +6,13 @@ from scipy.io import loadmat
 
 
 class ChannelEstimationNShot:
-    def __init__(self, root, batchsz, n_way, k_shot, k_query):
+    def __init__(self, root, batchsz, n_way, k_shot, k_query, seed=222):
         self.root = root
         self.batchsz = batchsz
         self.n_way = n_way
         self.k_shot = k_shot
         self.k_query = k_query
+        np.random.seed(seed)
 
         # Load data and labels from dictionaries
         self.data_dict = np.load(os.path.join(root, 'channel_data_dict.npy'), allow_pickle=True).item()  

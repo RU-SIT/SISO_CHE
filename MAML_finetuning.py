@@ -64,7 +64,7 @@ def fine_tune(args):
         data_shot, label_shot = train_data[:args.k_qry], train_labels[:args.k_qry]
         # pdb.set_trace()
         checkpoint_path = os.path.join(
-            args.save_init,
+            args.load_path,
             f"meta_model_nway_{args.n_way}",
             f"MAML_{args.k_qry}_shot_checkpoint_step_{args.step-1}_Meta_Lr{args.meta_lr}_Task_Lr{args.update_lr}.pth.tar"
         )
@@ -76,12 +76,16 @@ def fine_tune(args):
         print(f"Fine-tuning on channel: {outer_channel_name}")
         maml_finetuning.finetuning(optimizer, data_shot, label_shot, args.epoch, args.batchsz, device)
 
+        # Create the directory if it doesn't exist
+        save_dir = os.path.join(args.save_init, f"meta_model_nway_{args.n_way}")
+        os.makedirs(save_dir, exist_ok=True)
+
         # Save the fine-tuned model
         torch.save({'state_dict': maml_finetuning.state_dict()},
-                   os.path.join(args.save_init,f"meta_model_nway_{args.n_way}", f"MAML_{args.k_qry}_shot_fine_tuned_model_{outer_channel_name}_lr{args.update_lr}.pth"))
+                   os.path.join(save_dir, f"MAML_{args.k_qry}_shot_fine_tuned_model_{outer_channel_name}_lr{args.update_lr}.pth"))
 
         # Evaluate the model
-        eval_save_path = os.path.join(args.save_init,f"meta_model_nway_{args.n_way}", f"MAML_{args.k_qry}_shot_{outer_channel_name}_predictions.npy")
+        eval_save_path = os.path.join(save_dir, f"MAML_{args.k_qry}_shot_{outer_channel_name}_predictions.npy")
         eval_loss, predictions = maml_finetuning.evaluate(eval_data, eval_labels, args.batchsz, device, save_path = eval_save_path)
         print(f"MAML_{args.k_qry}_shot[{outer_channel_name}] Evaluation Loss: {eval_loss:.4f}")
         print(f"Predictions saved to {eval_save_path}")
@@ -91,7 +95,8 @@ if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
     argparser.add_argument('--root', type=str, default="new_data")
     argparser.add_argument('--device', type=str, default='cuda:1')
-    argparser.add_argument('--save_init', type=str, default="saved_init")
+    argparser.add_argument('--save_init', type=str, default="results")
+    argparser.add_argument('--load_path', type=str, default="saved_init", help="path to load meta-trained model")
     argparser.add_argument('--step', type=int, default=3000)
     argparser.add_argument('--epoch', type=int, default=500)
     argparser.add_argument('--batchsz', type=int, default=8)

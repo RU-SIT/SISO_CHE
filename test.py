@@ -110,7 +110,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', type=str, default="new_data")
     parser.add_argument('--device', type=str, default='cuda:1')
-    parser.add_argument('--save_init', type=str, default="saved_init")
+    parser.add_argument('--save_init', type=str, default="results")
     parser.add_argument('--n_way', type=int, default=5)   
     parser.add_argument('--epoch', type=int, default=500)
     args = parser.parse_args()

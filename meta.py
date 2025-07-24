@@ -183,7 +183,7 @@ class Meta(nn.Module):
         if save_path:
             np.save(save_path, all_predictions)
 
-        return avg_eval_loss, all_predictions
+        return avg_eval_loss, torch.from_numpy(all_predictions)
 
         
     def batchify(self, data, labels, batch_size):
