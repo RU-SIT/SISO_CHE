@@ -21,8 +21,8 @@ class ChannelEstimationNShot:
 
         self.file_names = list(self.data_dict.keys())
         # pdb.set_trace()
-        self.train_file_names = self.file_names[:10]
-        self.test_file_names = self.file_names[10:]
+        self.train_file_names = self.file_names[:4]
+        self.test_file_names = self.file_names[4:]
 
         self.indexes = {"train": 0, "test": 0}
         self.scld_datasets_cache = {"train": [], "test": []}
@@ -94,7 +94,7 @@ class ChannelEstimationNShot:
                 x_fixed, y_fixed = [], []
                 test_data = []
                 test_label = []
-                selected_files = np.random.choice(file_names, 1 if mode == 'test' else self.n_way, replace=False)
+                selected_files = np.random.choice(file_names, 1 if mode == 'test' else self.n_way, replace=True)
                 
 
                 for cur_file in selected_files:
@@ -275,8 +275,8 @@ class ChannelEstimationNShot:
         # return next_scld_batch, next_unscaled_batch, next_qry_denom, next_spt_denom, next_rx_signal, next_tx_signal, next_perfect_channel_cache, next_file_names
         return next_scld_batch, next_unscaled_batch, next_qry_name, next_spt_name, next_fixed_name, next_qry_denom, next_spt_denom, next_rx_signal, next_tx_signal
 
-    def save_unique_samples(self, save_path):
-            """
-            Save the unique file-to-sample mappings to a file.
-            """
-            np.save(os.path.join(save_path, "unique_file_samples.npy"), self.unique_file_samples)
+    # def save_unique_samples(self, save_path):
+    #         """
+    #         Save the unique file-to-sample mappings to a file.
+    #         """
+    #         np.save(os.path.join(save_path, "unique_file_samples.npy"), self.unique_file_samples)

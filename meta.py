@@ -7,6 +7,7 @@ from copy import deepcopy
 from learner import Learner
 import pdb
 from utils import Utils
+import matplotlib.pyplot as plt
 
 class Meta(nn.Module):
     def __init__(self, args, config):
@@ -22,7 +23,7 @@ class Meta(nn.Module):
         # self.update_step_test = args.update_step_test
 
         self.net = Learner(config)
-        self.meta_optim = optim.Adam(self.net.parameters(), lr=self.meta_lr, weight_decay= 0.05)
+        self.meta_optim = optim.Adam(self.net.parameters(), lr=self.meta_lr, weight_decay= 0.005)
 
     def clip_grad_by_norm_(self, grad, max_norm):
         total_norm = 0
@@ -41,12 +42,17 @@ class Meta(nn.Module):
         return total_norm / counter
 
     def forward(self, x_qry, y_qry, x_spt, y_spt):
+        # x_qry = x_qry.contiguous()
+        # x_spt = x_spt.contiguous()
+        # y_qry = y_qry.contiguous()
+        # y_spt = y_spt.contiguous()
+        
         batchsz, setsz, c_, h, w = x_qry.size()
         querysz = x_qry.size(1)
 
         losses_s = [0 for _ in range(self.update_step + 1)]
 
-        for i in range(batchsz):
+        for i in range( self.n_way):
             # pdb.set_trace()
             x_qry_i = x_qry[i].view(setsz, c_, h, w)
             y_qry_i = y_qry[i].view(setsz, c_, h, w)
@@ -94,7 +100,7 @@ class Meta(nn.Module):
     
     
     
-    def finetuning(self, optimizer, data, label, epochs, batchsz, device, patience=10, delta=1e-4, mode = 'train'):
+    def finetuning(self, optimizer, data, label, epochs, batchsz, device, save_loss ,patience=10, delta=1e-4, mode = 'train'):
         """
         Fine-tune the network on a single task.
         :param data: Input data [batchsz, c_, h, w]
@@ -112,7 +118,7 @@ class Meta(nn.Module):
         self.net.train()
         best_loss = float('inf')
         epochs_no_improve = 0
-        
+        epoch_losses = []
         if mode =="train":
             # Fine-tuning loop
             for epoch in range(epochs):
@@ -137,10 +143,9 @@ class Meta(nn.Module):
 
                 # Log epoch details
                 avg_loss = epoch_loss / len(data)  # Average loss over batches
+                epoch_losses.append(avg_loss)
                 print(f"Epoch [{epoch+1}/{epochs}], Loss: {avg_loss:.4f}")
-                    
-                    
-                    
+                                        
                 if avg_loss < best_loss - delta:
                     best_loss = avg_loss
                     epochs_no_improve = 0  # Reset counter
@@ -152,7 +157,8 @@ class Meta(nn.Module):
                 if epochs_no_improve >= patience:
                     print(f"Early stopping at epoch {epoch+1}. Best loss: {best_loss:.4f}")
                     break
-
+                
+            np.save(save_loss,epoch_losses)
             return best_loss
         
         

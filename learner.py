@@ -136,6 +136,7 @@ class Learner(nn.Module):
         bn_idx = 0
 
         for name, param in self.config:
+            # print(f"Before {name}: {x.shape}")
             if name == 'conv2d':
                 w, b = vars[idx], vars[idx + 1]
                 # remember to keep synchrozied of forward_encoder and forward_decoder!
@@ -188,7 +189,7 @@ class Learner(nn.Module):
         assert idx == len(vars)
         assert bn_idx == len(self.vars_bn)
 
-
+        # print(f"After {name}: {x.shape}")
         return x
 
 

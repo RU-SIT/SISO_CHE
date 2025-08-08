@@ -80,8 +80,8 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process channel .mat files and save as .npy")
-    parser.add_argument('--input_dir', type=str, default="/home/CAMPUS/rghasemi/projects/MyPrivaterepo/data", help='Directory containing the .mat files')
-    parser.add_argument('--output_dir', type=str, default="/home/CAMPUS/rghasemi/projects/MyPrivaterepo/new_data", help='Directory to save the output .npy files')
+    parser.add_argument('--input_dir', type=str, default="MyPrivaterepo/data", help='Directory containing the .mat files')
+    parser.add_argument('--output_dir', type=str, default="new_data", help='Directory to save the output .npy files')
     
     args = parser.parse_args()
     main(args)

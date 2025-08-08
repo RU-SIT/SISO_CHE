@@ -6,6 +6,28 @@ import re
 class Metric():
     def __init__(self):
         pass
+    
+    # def calculate_ber(original_symbols, estimated_symbols, n_bits):
+    #     """
+    #     Calculate Bit Error Rate (BER)
+        
+    #     Args:
+    #         original_symbols: Original symbol indices
+    #         estimated_symbols: Estimated symbol indices
+    #         n_bits: Number of bits per symbol
+        
+    #     Returns:
+    #         float: Bit Error Rate
+    #     """
+    #     # Convert symbols to binary strings
+    #     original_bits = np.unpackbits(np.array(original_symbols, dtype=np.uint8))
+    #     estimated_bits = np.unpackbits(np.array(estimated_symbols, dtype=np.uint8))
+        
+    #     # Calculate bit errors
+    #     bit_errors = np.sum(original_bits != estimated_bits)
+    #     total_bits = len(original_bits)
+        
+    #     return bit_errors / total_bits
 
     def modulate(self, bits, modulation='BPSK'):
         """
@@ -138,12 +160,20 @@ class Metric():
         # Calculate BER
         ber = num_errors / len(bits)
         return ber
+    
+
+# def extract_snr(file_name):
+#     match = re.search(r'SNR_(\d+)db', file_name)
+#     if match:
+#         return int(match.group(1))  # Extract the number and convert to integer
+#     return None 
 
 def extract_snr(file_name):
-    match = re.search(r'SNR_(\d+)db', file_name)
+    match = re.search(r'snr(\d+)', file_name)
     if match:
         return int(match.group(1))  # Extract the number and convert to integer
     return None 
+
 
 def mmse_channel_estimation(rx, ch, channel_var, noise_var):
     """

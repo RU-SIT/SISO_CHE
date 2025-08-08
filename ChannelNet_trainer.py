@@ -16,8 +16,8 @@ def data_loader(root, n_way, mode):
     file_names = list(data_dict.keys())
     
     # Split filenames into training and testing
-    train_file_names = file_names[:n_way * 2]
-    finetune_file_names = file_names[n_way * 2:]
+    train_file_names = file_names[:4]
+    finetune_file_names = file_names[4:]
     
     if mode == 'train':
         # Collect training data and labels
@@ -46,7 +46,7 @@ def channel_finder(root, n_way):
     file_names = list(data_dict.keys())
     
     # Split filenames into training and testing
-    finetune_file_names = file_names[n_way * 2:]
+    finetune_file_names = file_names[4:]
     
     return finetune_file_names
 
@@ -89,10 +89,11 @@ def ChannelNet(args):
         srcnn_model.fit(train_data, train_label, args.batchsz, args.train_epoch, verbose=1)
         srcnn_model.save_weights(os.path.join(args.save_init, "SRCNN_trained.weights.h5"))
         srcnn_pred_train = srcnn_model.predict(train_data)
-        
+        print(f"SRCNN:{srcnn_model.summary()}")
         dncnn_model = DNCNN_model(lr = args.train_lr)    
         history = dncnn_model.fit(srcnn_pred_train, train_label, args.batchsz, args.train_epoch, verbose=1)
         plot_loss(history, "DNCNN Training Loss", os.path.join(args.save_init, "DNCNN_loss.png"))
+        print(f"DNCNN:{dncnn_model.summary()}")
         
         dncnn_model.save_weights(os.path.join(args.save_init, "DNCNN_trained.weights.h5"))
         
@@ -133,18 +134,18 @@ def ChannelNet(args):
 
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
-    argparser.add_argument('--root', type=str, help='path to processed_data dir', default="new_data")
-    argparser.add_argument('--device', type=str, help='device to run the process', default='2')
-    argparser.add_argument('--save_init', type=str, help='path to save directory', default="saved_init")
-    argparser.add_argument('--finetuning_epoch', type=int, help='epochs for fine_tuning', default=100)
-    argparser.add_argument('--train_epoch', type=int, help='epoch number for fine-tuning', default=3000)
+    argparser.add_argument('--root', type=str, help='path to processed_data dir', default="/home/CAMPUS/rghasemi/projects/MyPrivaterepo/Sionna_datasets/ps2_p612/speed5/SISO-UMi")
+    argparser.add_argument('--device', type=str, help='device to run the process', default='1')
+    argparser.add_argument('--save_init', type=str, help='path to save directory', default="SISO_UMi_init")
+    argparser.add_argument('--finetuning_epoch', type=int, help='epochs for fine_tuning', default=25)
+    argparser.add_argument('--train_epoch', type=int, help='epoch number for fine-tuning', default=8000)
     argparser.add_argument('--batchsz', type=int, help='batch size', default=8)
-    argparser.add_argument('--n_way', type=int, help='n_task', default=5)  
-    argparser.add_argument('--k_qry', type=int, help='k shot for query set', default=15)
-    argparser.add_argument('--k_spt', type=int, help='k shot for support set', default=15)
+    argparser.add_argument('--n_way', type=int, help='n_task', default=2)  
+    argparser.add_argument('--k_qry', type=int, help='k shot for query set', default=5)
+    argparser.add_argument('--k_spt', type=int, help='k shot for support set', default=5)
     argparser.add_argument('--train_lr', type=float, help='fine-tuning learning rate', default=1e-4)
     argparser.add_argument('--update_lr', type=float, help='fine-tuning learning rate', default=1e-3)
-    argparser.add_argument('--mode', type=str, help='train or fine_tune', default="finetunng")
+    argparser.add_argument('--mode', type=str, help='train or fine_tune', default="fine_tune")
     
     
     
