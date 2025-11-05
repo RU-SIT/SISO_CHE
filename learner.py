@@ -2,7 +2,7 @@ import  torch
 from    torch import nn
 from    torch.nn import functional as F
 import  numpy as np
-
+import pdb
 
 
 class Learner(nn.Module):
@@ -29,6 +29,7 @@ class Learner(nn.Module):
         for i, (name, param) in enumerate(self.config):
             if name == 'conv2d':
                 # [ch_out, ch_in, kernelsz, kernelsz]
+                # pdb.set_trace()
                 w = nn.Parameter(torch.ones(*param[:4]))
                 # gain=1 according to cbfin's implementation
                 torch.nn.init.kaiming_normal_(w)

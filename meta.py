@@ -23,7 +23,23 @@ class Meta(nn.Module):
         # self.update_step_test = args.update_step_test
 
         self.net = Learner(config)
-        self.meta_optim = optim.Adam(self.net.parameters(), lr=self.meta_lr, weight_decay= 0.005)
+        # AdamW is recommended for MAML with CNN architectures
+        self.meta_optim = optim.AdamW(self.net.parameters(), lr=self.meta_lr, weight_decay=0.01)
+        
+        # Learning rate scheduler for meta optimizer (similar to ChannelNet's ReduceLROnPlateau)
+        # Default: factor=0.5, patience=8, min_lr=1e-7 (can be overridden via args)
+        scheduler_factor = getattr(args, 'scheduler_factor', 0.5)
+        scheduler_patience = getattr(args, 'scheduler_patience', 8)
+        scheduler_min_lr = getattr(args, 'scheduler_min_lr', 1e-7)
+        self.meta_scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+            self.meta_optim, mode='min', factor=scheduler_factor, 
+            patience=scheduler_patience, min_lr=scheduler_min_lr, verbose=True
+        )
+        
+        # Alternative optimizers:
+        # self.meta_optim = optim.RMSprop(self.net.parameters(), lr=self.meta_lr, alpha=0.99, weight_decay=0.01)
+        # self.meta_optim = optim.SGD(self.net.parameters(), lr=self.meta_lr, momentum=0.9, weight_decay=0.01)
+        # self.meta_optim = optim.SparseAdam(self.net.parameters(), lr=self.meta_lr) . #did not work because the gradiant is not sparse
 
     def clip_grad_by_norm_(self, grad, max_norm):
         total_norm = 0
@@ -54,14 +70,16 @@ class Meta(nn.Module):
 
         for i in range( self.n_way):
             # pdb.set_trace()
+            # 1. run the i-th task and compute loss for k=0
             x_qry_i = x_qry[i].view(setsz, c_, h, w)
             y_qry_i = y_qry[i].view(setsz, c_, h, w)
-            logits = self.net(x_qry_i, vars=None, bn_training=True)
+            logits = self.net(x_qry_i, vars=None, bn_training=True)                   
             # logits = logits.view(setsz, c_, h, w)
             loss = F.mse_loss(logits, y_qry_i)
             grad = torch.autograd.grad(loss, self.net.parameters())
             fast_weights = list(map(lambda p: p[1] - self.update_lr * p[0], zip(grad, self.net.parameters())))  
-
+            
+            # this is the loss and accuracy before first update
             with torch.no_grad():
                 x_spt_i = x_spt[i].view(querysz, c_, h, w)
                 y_spt_i = y_spt[i].view(querysz, c_, h, w)
@@ -70,6 +88,7 @@ class Meta(nn.Module):
                 loss_s = F.mse_loss(logits_s, y_spt_i)
                 losses_s[0] += loss_s
 
+            # this is the loss and accuracy after the first update
             with torch.no_grad():
                 logits_s = self.net(x_spt_i, fast_weights, bn_training=True)  
                 logits_s = logits_s.view(querysz, c_, h, w) 
@@ -84,16 +103,21 @@ class Meta(nn.Module):
                 grad = torch.autograd.grad(loss, fast_weights)
                 fast_weights = list(map(lambda p: p[1] - self.update_lr * p[0], zip(grad, fast_weights)))
 
-                logits_s = self.net(x_spt_i, fast_weights, bn_training=True)
+                logits_s = self.net(x_qry_i, fast_weights, bn_training=True)
                 logits_s = logits_s.view(querysz, c_, h, w)  
-                loss_s = F.mse_loss(logits_s, y_spt_i)
+                loss_s = F.mse_loss(logits_s, y_qry_i)
                 losses_s[k + 1] += loss_s
 
         loss_q = losses_s[-1] / batchsz
 
         self.meta_optim.zero_grad()
-        loss_q.backward()
+        loss_q.backward() 
+        # meta update
         self.meta_optim.step()
+        
+        # Update learning rate scheduler (step with loss value)
+        # Note: This should be called after optimizer.step() in the training loop
+        # The scheduler will be stepped from the training script with the loss value
 
         return losses_s
     

@@ -1,8 +1,8 @@
 import os
 import numpy as np
 import pdb
+import sys
 from utils import Utils
-from scipy.io import loadmat
 
 
 class ChannelEstimationNShot:
@@ -20,9 +20,27 @@ class ChannelEstimationNShot:
         self.tx_signal = np.load(os.path.join(root, 'tx_signal_dict.npy'), allow_pickle=True).item()
 
         self.file_names = list(self.data_dict.keys())
-        # pdb.set_trace()
-        self.train_file_names = self.file_names[:4]
-        self.test_file_names = self.file_names[4:]
+        
+        # Determine data type (UMi or TDL) from root path
+        if 'UMi' in root or 'UMi' in root.upper():
+            self.data_type = 'UMi'
+            num_train_channels = 4
+        elif 'TDL' in root or 'TDL' in root.upper():
+            self.data_type = 'TDL'
+            num_train_channels = 10
+        else:
+            # Default to UMi if not specified
+            self.data_type = 'UMi'
+            num_train_channels = 4
+            print(f"Warning: Could not determine data type from root path '{root}'. Defaulting to UMi with {num_train_channels} channels for training.")
+        
+        # Split files into train and test based on data type
+        self.train_file_names = self.file_names[:num_train_channels]
+        self.test_file_names = self.file_names[num_train_channels:]
+        
+        print(f"Data type: {self.data_type}")
+        print(f"Training channels: {len(self.train_file_names)} ({', '.join(self.train_file_names)})")
+        print(f"Test channels: {len(self.test_file_names)} ({', '.join(self.test_file_names)})")
 
         self.indexes = {"train": 0, "test": 0}
         self.scld_datasets_cache = {"train": [], "test": []}
@@ -30,8 +48,8 @@ class ChannelEstimationNShot:
         self.qry_name_cache =  {"train": [], "test": []}
         self.spt_name_cache =  {"train": [], "test": []}
         self.fixed_name_cache =  {"train": [], "test": []}
-        self.spt_denom_cache = {"train": [], "test": []}
-        self.qry_denom_cache = {"train": [], "test": []}
+        self.spts_params_cache = {"train": [], "test": []}
+        self.qry_params_cache = {"train": [], "test": []}
         self.rx_signals_cache = {"train": [], "test": []}
         self.tx_signals_cache = {"train": [], "test": []}
         # self.perfect_channel_cache = {"train": [], "test": []} 
@@ -50,8 +68,8 @@ class ChannelEstimationNShot:
             self.qry_name_cache[mode]= qry_name
             self.spt_name_cache[mode] = spt_name
             self.fixed_name_cache[mode]= fixed_name
-            self.spt_denom_cache[mode] = spt_denom
-            self.qry_denom_cache[mode] = qry_denom
+            self.spts_params_cache[mode] = spt_denom
+            self.qry_params_cache[mode] = qry_denom
             self.rx_signals_cache[mode] = rx_signals
             self.tx_signals_cache[mode] = tx_signals
             # self.perfect_channel_cache[mode] = perfect_channel_cache
@@ -72,8 +90,8 @@ class ChannelEstimationNShot:
         qry_name_cache = []
         spt_name_cache = []
         fixed_name_cache = []
-        spt_denom_cache = []
-        qry_denom_cache = []
+        qry_params_cache = []
+        spts_params_cache = []
         rx_signals_cache = []
         tx_signals_cache = []
         #perfect_channel_cache = []
@@ -142,7 +160,7 @@ class ChannelEstimationNShot:
                     all_indecies= set(range(data.shape[0]))
                     unselected_samples= list(all_indecies- set(selected_samples))
                     test_data.extend(data[unselected_samples])
-                    test_label.extend(data[unselected_samples])
+                    test_label.extend(labels[unselected_samples])
                          
 
                     
@@ -190,10 +208,14 @@ class ChannelEstimationNShot:
             # pdb.set_trace()
             
             # Apply unit scaling
-            x_qrys_scld, y_qrys_scld, qry_denom = Utils.unit_scaling(x_qrys, y_qrys)
-            x_spts_scld, y_spts_scld, spts_denom = Utils.unit_scaling(x_spts, y_spts)
-            xs_fixed_scld, ys_fixed_scld, fixed_denom = Utils.unit_scaling(xs_fixed, ys_fixed)
-            test_data_scld, test_label_scld, test_denom = Utils.unit_scaling(test_data_all, test_label_all)
+            x_qrys_scld, qry_params = Utils.standard_scaling(x_qrys)
+            y_qrys_scld, _ = Utils.standard_scaling(y_qrys)
+            x_spts_scld, spts_params = Utils.standard_scaling(x_spts)
+            y_spts_scld, _ = Utils.standard_scaling(y_spts)
+            xs_fixed_scld, xs_fixed_params = Utils.standard_scaling(xs_fixed)
+            ys_fixed_scld, _ = Utils.standard_scaling(ys_fixed)
+            test_data_scld, test_data_params = Utils.standard_scaling(test_data_all)
+            test_label_scld, _ = Utils.standard_scaling(test_label_all)
             
             # pdb.set_trace()
             # Transpose arrays to match expected dimensions: [batch_size, set_size, channels, height, width]
@@ -227,8 +249,8 @@ class ChannelEstimationNShot:
             qry_name_cache.append(x_qry_names)
             spt_name_cache.append(x_spt_names)
             fixed_name_cache.append(x_fixed_names)
-            qry_denom_cache.append(qry_denom)
-            spt_denom_cache.append(spts_denom)
+            qry_params_cache.append(qry_params)
+            spts_params_cache.append(spts_params)
             # pdb.set_trace()
             rx_signals_cache.append(rx_batch)
             tx_signals_cache.append(tx_batch)
@@ -237,46 +259,39 @@ class ChannelEstimationNShot:
         
         # return scld_data_cache, data_cache, qry_denom_cache, spt_denom_cache, selected_files_cache, rx_signals_cache, tx_signals_cache, perfect_channel_cache, file_names_cache
         
-        return scld_data_cache, data_cache, qry_name_cache, spt_name_cache, fixed_name_cache, qry_denom_cache, spt_denom_cache, rx_signals_cache, tx_signals_cache
-
+        return scld_data_cache, data_cache, qry_name_cache, spt_name_cache, fixed_name_cache, spts_params_cache, qry_params_cache, rx_signals_cache, tx_signals_cache
+    
     def next(self, mode='train'):
-        """
-        Retrieves the next batch from the dataset.
-        """
         if self.indexes[mode] >= len(self.datasets_cache[mode]):
             self.indexes[mode] = 0
-            scld_cache, unscaled_cache, qry_name_cache, spt_name_cache, fixed_name_cache, qry_denom_cache, spt_denom_cache, rx_signals_cache, tx_signals_cache = self.load_data_cache(mode)
+            (scld_cache, unscaled_cache, qry_name_cache, spt_name_cache, fixed_name_cache,
+            spts_params_cache, qry_params_cache, rx_signals_cache, tx_signals_cache) = self.load_data_cache(mode)
             self.scld_datasets_cache[mode] = scld_cache
-            self.datasets_cache[mode] = unscaled_cache
-            self.qry_name_cache[mode]= qry_name_cache
-            self.spt_name_cache[mode] = spt_name_cache
-            self.fixed_name_cache[mode]= fixed_name_cache
-            self.qry_denom_cache[mode] = qry_denom_cache
-            self.spt_denom_cache[mode] = spt_denom_cache
-            self.rx_signals_cache[mode] = rx_signals_cache
-            self.tx_signals_cache[mode] = tx_signals_cache
+            self.datasets_cache[mode]      = unscaled_cache
+            self.qry_name_cache[mode]      = qry_name_cache
+            self.spt_name_cache[mode]      = spt_name_cache
+            self.fixed_name_cache[mode]    = fixed_name_cache
+            self.qry_params_cache[mode]    = qry_params_cache
+            self.spts_params_cache[mode]   = spts_params_cache
+            self.rx_signals_cache[mode]    = rx_signals_cache
+            self.tx_signals_cache[mode]    = tx_signals_cache
 
-            # self.perfect_channel_cache[mode] = perfect_channel_cache
+        idx = self.indexes[mode]
 
-        next_scld_batch = self.scld_datasets_cache[mode][self.indexes[mode]]
-        next_unscaled_batch = self.datasets_cache[mode][self.indexes[mode]]
-        next_qry_name = self.qry_name_cache[mode][self.indexes[mode]]
-        next_spt_name = self.spt_name_cache[mode][self.indexes[mode]]
-        next_fixed_name = self.fixed_name_cache[mode][self.indexes[mode]]
-        next_qry_denom = self.qry_denom_cache[mode][self.indexes[mode]]
-        next_spt_denom = self.spt_denom_cache[mode][self.indexes[mode]]
-        next_rx_signal = self.rx_signals_cache[mode]
-        next_tx_signal = self.tx_signals_cache[mode]
-        # next_perfect_channel_cache = self.perfect_channel_cache[mode][self.indexes[mode]]
-
+        next_scld_batch   = self.scld_datasets_cache[mode][idx]
+        next_unscaled_batch = self.datasets_cache[mode][idx]
+        next_qry_name     = self.qry_name_cache[mode][idx]
+        next_spt_name     = self.spt_name_cache[mode][idx]
+        next_fixed_name   = self.fixed_name_cache[mode][idx]
+        next_qry_params   = self.qry_params_cache[mode][idx]
+        next_spts_params  = self.spts_params_cache[mode][idx]
+        next_rx_signal    = self.rx_signals_cache[mode][idx]
+        next_tx_signal    = self.tx_signals_cache[mode][idx]
 
         self.indexes[mode] += 1
 
-        # return next_scld_batch, next_unscaled_batch, next_qry_denom, next_spt_denom, next_rx_signal, next_tx_signal, next_perfect_channel_cache, next_file_names
-        return next_scld_batch, next_unscaled_batch, next_qry_name, next_spt_name, next_fixed_name, next_qry_denom, next_spt_denom, next_rx_signal, next_tx_signal
+        return (next_scld_batch, next_unscaled_batch,
+                next_qry_name, next_spt_name, next_fixed_name,
+                next_qry_params, next_spts_params,
+                next_rx_signal, next_tx_signal)
 
-    # def save_unique_samples(self, save_path):
-    #         """
-    #         Save the unique file-to-sample mappings to a file.
-    #         """
-    #         np.save(os.path.join(save_path, "unique_file_samples.npy"), self.unique_file_samples)

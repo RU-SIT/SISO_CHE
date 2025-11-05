@@ -65,6 +65,7 @@ class Channel_2D:
             raise ValueError("No data found. Please check the directory path and ensure it contains .mat files.")
         # pdb.set_trace()
         # Save the dictionaries as .npy files
+        os.makedirs(self.output_dir, exist_ok=True)
         np.save(os.path.join(self.output_dir, "channel_data_dict.npy"), data_dict)
         np.save(os.path.join(self.output_dir, "channel_label_dict.npy"), label_dict)
         np.save(os.path.join(self.output_dir, "rx_signal_dict.npy"), rx_signal_dict)

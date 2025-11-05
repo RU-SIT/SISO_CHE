@@ -1,15 +1,11 @@
-from keras.models import Sequential,  Model
-from keras.layers import Convolution2D,Input,BatchNormalization,Conv2D,Activation,Lambda,Subtract,Conv2DTranspose, PReLU
+from keras.models import Sequential, Model
+from keras.layers import Convolution2D, Input, BatchNormalization, Conv2D, Activation, Lambda, Subtract, Conv2DTranspose, PReLU
 from keras.regularizers import l2
-from keras.layers import  Reshape,Dense,Flatten
-# from keras.layers.advanced_activations import LeakyReLU
+from keras.layers import Reshape, Dense, Flatten
 from keras.callbacks import ModelCheckpoint
 from keras.optimizers import SGD, Adam
 from scipy.io import loadmat
 import keras.backend as K
-# from keras.layers.advanced_activations import LeakyReLU
-from keras.callbacks import ModelCheckpoint
-from keras.optimizers import SGD, Adam
 import numpy as np
 import math
 from scipy import interpolate
@@ -34,7 +30,60 @@ def unit_scaling(data, label):
 
     return scaled_data, scaled_label, denom
 
+@staticmethod
+def standard_scaling(x, eps=1e-8):
+    """
+    Scale the real and imaginary channels separately into [-1, 1].
+    
+    Args:
+        x: np.ndarray with shape (..., 2), where last dim=2 (real, imag).
+        eps: small constant to avoid division by zero.
+    
+    Returns:
+        x_scaled: scaled data in [-1,1], same shape as x
+        params: dict with min/max per channel for unscaling
+    """
+    # Split real/imag
+    real = x[..., 0]
+    imag = x[..., 1]
+    
+    # Compute per-channel min/max
+    min_real, max_real = real.min(), real.max()
+    min_imag, max_imag = imag.min(), imag.max()
+    
+    # Scale to [-1,1]
+    real_scaled = 2.0 * (real - min_real) / (max_real - min_real + eps) - 1.0
+    imag_scaled = 2.0 * (imag - min_imag) / (max_imag - min_imag + eps) - 1.0
+    
+    # Recombine
+    x_scaled = np.stack([real_scaled, imag_scaled], axis=-1)
+    
+    params = {
+        "min_real": min_real, "max_real": max_real,
+        "min_imag": min_imag, "max_imag": max_imag
+    }
+    return x_scaled, params
 
+@staticmethod
+def unscale_standard(x_scaled, params, eps=1e-8):
+    """
+    Reverse the standard scaling to recover original values.
+    
+    Args:
+        x_scaled: scaled array (..., 2), with values in [-1,1]
+        params: dict with min/max from standard_scaling
+    Returns:
+        x_unscaled: recovered data, same shape
+    """
+    real_s = x_scaled[..., 0]
+    imag_s = x_scaled[..., 1]
+    
+    real = (real_s + 1.0) * 0.5 * (params["max_real"] - params["min_real"] + eps) + params["min_real"]
+    imag = (imag_s + 1.0) * 0.5 * (params["max_imag"] - params["min_imag"] + eps) + params["min_imag"]
+    
+    return np.stack([real, imag], axis=-1)
+    
+    
 def SRCNN_model(lr):
     input_shape = (612, 14, 2)  
     x = Input(shape=input_shape)
@@ -90,10 +139,10 @@ def SRCNN_predict(input_data , num_pilots):
 def DNCNN_model (lr):
   
     inpt = Input(shape=(None,None,2))
-    # 1st layer, Conv+relu
+    # 1st layer, Conv+tanh
     x = Conv2D(filters=64, kernel_size=(3,3), strides=(1,1), padding='same')(inpt)
     x = Activation('tanh')(x)
-    # 18 layers, Conv+BN+relu
+    # 18 layers, Conv+BN+tanh
     for i in range(18):
         x = Conv2D(filters=64, kernel_size=(3,3), strides=(1,1), padding='same')(x)
         x = BatchNormalization(axis=-1, epsilon=1e-3)(x)

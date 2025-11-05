@@ -2,10 +2,6 @@
 # torch.cuda.empty_cache()
 # print(torch.cuda.device_count())
 import os
-os.environ['NCCL_P2P_DISABLE'] = '1'
-os.environ['NCCL_IB_DISABLE']  = '1'
-os.environ['NCCL_DEBUG']       = 'INFO'
-# os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 import torch
 # torch.distributed.init_process_group(backend='gloo')
 import torch.nn.functional as F
@@ -27,25 +23,27 @@ def main(args):
     print(args)
     metric = Metric()
 
-    # Define the model configuration
+    # Define the model configuration (reduced to match ChannelNet size ~683K parameters)
+    # Reduced from: 64->256->512->256->32->batchsz->2
+    # To: 32->128->256->128->32->batchsz->2
     config = [
-        ('conv2d', [64, 2, 3, 3, 1, 1]),
+        ('conv2d', [32, 2, 3, 3, 1, 1]),
         ('tanh', [True]),
         ('avg_pool2d', [3, 1, 1]),
-        ('bn', [64]),
-        ('conv2d', [256, 64, 3, 3, 1, 1]),
+        ('bn', [32]),
+        ('conv2d', [128, 32, 3, 3, 1, 1]),
         ('tanh', [True]),
         ('avg_pool2d', [3, 1, 1]),
-        ('bn', [256]),
-        ('conv2d', [512, 256, 3, 3, 1, 1]),
-        ('tanh', [True]),
-        ('avg_pool2d', [3, 1, 1]),
-        ('bn', [512]),
-        ('conv2d', [256, 512, 3, 3, 1, 1]),
+        ('bn', [128]),
+        ('conv2d', [256, 128, 3, 3, 1, 1]),
         ('tanh', [True]),
         ('avg_pool2d', [3, 1, 1]),
         ('bn', [256]),
-        ('conv2d', [32, 256, 3, 3, 1, 1]),
+        ('conv2d', [128, 256, 3, 3, 1, 1]),
+        ('tanh', [True]),
+        ('avg_pool2d', [3, 1, 1]),
+        ('bn', [128]),
+        ('conv2d', [32, 128, 3, 3, 1, 1]),
         ('tanh', [True]),
         ('avg_pool2d', [3, 1, 1]),
         ('bn', [32]),
@@ -56,8 +54,9 @@ def main(args):
         ('conv2d', [2, args.batchsz, 3, 3, 1, 1])
     ]
    
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
+    device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
+    print(f"Using device: {device}")
+    # pdb.set_trace()
     # if multiple GPUs, wrap in DataParallel
     maml = Meta(args, config)
     # pdb.set_trace()
@@ -86,7 +85,7 @@ def main(args):
         k_shot=args.k_spt,
         k_query=args.k_qry
     )
-
+    all_losses = []
     train_losses = []
     for step in range(args.epoch):
         # fetch one meta‐batch
@@ -94,7 +93,7 @@ def main(args):
         xs_fixed_scld, ys_fixed_scld, eval_data_scld, eval_label_scld), \
         (x_qry, y_qry, x_spt, y_spt, xs_fixed, ys_fixed, val_data, val_label), \
         qry_name, spt_name, fixed_name, qry_denom, spt_denom, rx_signal, tx_signal = db_train.next()
-
+        # pdb.set_trace()
         # to tensors + device
         x_qry_scld = torch.from_numpy(x_qry_scld).to(device)
         y_qry_scld = torch.from_numpy(y_qry_scld).to(device)
@@ -109,17 +108,21 @@ def main(args):
         y_spt = torch.from_numpy(y_spt).to(device)
         xs_fixed = torch.from_numpy(xs_fixed).to(device)
         ys_fixed = torch.from_numpy(ys_fixed).to(device)
-
+        # pdb.set_trace()
+        
         # forward / meta‐update
-        losses = maml(x_qry_scld, y_qry, x_spt_scld, y_spt)
+        losses = maml(x_qry_scld, y_qry_scld, x_spt_scld, y_spt_scld)
         current_loss = losses[-1].item()
-
-        if step % 1000 == 0 or step == args.epoch - 1:
+        all_losses.append(current_loss)
+        
+        # Update learning rate scheduler
+        maml.meta_scheduler.step(current_loss)
+        
+        if step % 100 == 0 or step == args.epoch - 1:
             train_losses.append(current_loss)
             print(f'step: {step}, training loss: {current_loss}')
-
-            # prepare state_dict for saving (unwrap DataParallel)
-            state_dict = maml.module.state_dict() if isinstance(maml, torch.nn.DataParallel) else maml.state_dict()
+            
+        if step % 1000 == 0 or step == args.epoch - 1:
             ckpt_dir = os.path.join(
                 args.save_init,
                 f"meta_model_nway_{args.n_way}"
@@ -131,43 +134,47 @@ def main(args):
                 + f"_MetaLr{args.meta_lr}_TaskLr{args.update_lr}.pth.tar"
             )
             Utils.save_checkpoint(
-                {'step': step, 'state_dict': state_dict},
+                {'step': step, 'state_dict': maml.state_dict()},
                 ckpt_path
             )
 
-    # plot training curve
+    # plot training curve for all epochs
     plt.figure(figsize=(10, 6))
-    plt.plot(
-        np.arange(0, len(train_losses) * 100, 100),
-        train_losses,
-        linestyle='-'
-    )
+    # Create an array of epoch indices corresponding to each loss value
+    steps_recorded = list(range(args.epoch))  # One entry per epoch
+    plt.plot(steps_recorded, all_losses, linestyle='-')
     plt.title(
         f'Training Loss ({args.k_qry}-shot MAML)\n'
         f'Meta LR={args.meta_lr}, Task LR={args.update_lr}',
         fontsize=16
     )
-    plt.xlabel('Step', fontsize=14)
+    plt.xlabel('Epoch', fontsize=14)
     plt.ylabel('Loss', fontsize=14)
     out_fig = os.path.join(
         args.save_init,
         f'{args.k_qry}shot_training_loss_curve_MetaLr{args.meta_lr}_TaskLr{args.update_lr}.png'
     )
     plt.savefig(out_fig)
-
+    
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--root',     type=str,   default="new_data")
+    parser.add_argument('--root',     type=str,   default="Sionna_datasets/ps2_p612/speed5/SISO-UMi/interpolated_noleak")
     parser.add_argument('--device',   type=str,   default='cuda:0')
-    parser.add_argument('--save_init',type=str,   default="/home/CAMPUS/rghasemi/projects/MyPrivaterepo/new_data/Multi_GPU_for_more_shot")
-    parser.add_argument('--epoch',    type=int,   default=4000)
-    parser.add_argument('--n_way',    type=int,   default=5)
-    parser.add_argument('--k_spt',    type=int,   default=15)
-    parser.add_argument('--k_qry',    type=int,   default=15)
+    parser.add_argument('--save_init',type=str,   default="SISO_UMi_init/std_scaler_interpolated_noleak")
+    parser.add_argument('--epoch',    type=int,   default=5000)
+    parser.add_argument('--n_way',    type=int,   default=4)
+    parser.add_argument('--k_spt',    type=int,   default=5)
+    parser.add_argument('--k_qry',    type=int,   default=5)
     parser.add_argument('--batchsz',  type=int,   default=8)
     parser.add_argument('--meta_lr',  type=float, default=1e-4)
     parser.add_argument('--update_lr',type=float, default=1e-3)
     parser.add_argument('--update_step', type=int, default=2)
+    parser.add_argument('--scheduler_factor', type=float, default=0.5,
+                        help='Factor by which learning rate will be reduced ')
+    parser.add_argument('--scheduler_patience', type=int, default=8,
+                        help='Number of epochs with no improvement after which LR will be reduced ')
+    parser.add_argument('--scheduler_min_lr', type=float, default=1e-7,
+                        help='Lower bound on learning rate ')
     args = parser.parse_args()
     main(args)
 
