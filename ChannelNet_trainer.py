@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import pandas as pd
 from models import SRCNN_model, DNCNN_model, visualize_and_save_results, DNCNN_predict
 from ch_metrics import Metric
 import matplotlib.pyplot as plt
@@ -41,7 +42,7 @@ def _apply_scaling_with_params(x, params, eps=EPS):
 # --------------------------------------------------------
 
 
-def data_loader(root, n_way, mode, dataset_type):
+def data_loader(root, mode, dataset_type):
     data = []
     label = []
     # Load the data and labels
@@ -81,7 +82,7 @@ def data_loader(root, n_way, mode, dataset_type):
     return data_scaled, label_scaled, x_params, y_params
 
 
-def channel_finder(root, n_way, dataset_type):
+def channel_finder(root, dataset_type):
     data_dict = np.load(os.path.join(root, 'channel_data_dict.npy'), allow_pickle=True).item()
     file_names = list(data_dict.keys())
     # Split filenames into training and testing based on dataset type
@@ -123,7 +124,7 @@ def ChannelNet(args):
 
     
     if args.mode == "train":
-        train_data, train_label, x_params, y_params = data_loader(args.root, args.n_way, args.mode, args.dataset_type)
+        train_data, train_label, x_params, y_params = data_loader(args.root, args.mode, args.dataset_type)
         print(f"Training data shape: {train_data.shape}")
         print(f"Training label shape: {train_label.shape}")
         print(f"Total number of training samples: {train_data.shape[0]}")
@@ -188,8 +189,11 @@ def ChannelNet(args):
         print("Training complete. Models and min–max params saved.")
 
     else:
-        finetune_file_names = channel_finder(args.root, args.n_way, args.dataset_type)
+        finetune_file_names = channel_finder(args.root,args.dataset_type)
         x_params, y_params = _load_minmax_params(args.save_init)
+
+        # Track MSE for all channels
+        all_mse_results = []
 
         for channel_name in finetune_file_names:
             print(f"Starting fine-tuning for channel: {channel_name}")
@@ -261,15 +265,66 @@ def ChannelNet(args):
             srcnn_pred_eval_s = srcnn_model.predict(eval_data_s, verbose=0)
             dncnn_pred_s = dncnn_model.predict(srcnn_pred_eval_s, verbose=0)
 
+            # Compute evaluation loss in scaled space
+            eval_loss_scaled = np.mean((dncnn_pred_s - eval_label_s) ** 2)
+
             dncnn_pred = Utils.unscale_standard(dncnn_pred_s, y_params)
-            eval_label = Utils.unscale_standard(eval_label_s, y_params)
+            eval_label = Utils.unscale_standard(eval_label_s, y_params)  # Unscale for MSE computation
 
             os.makedirs(args.save_init, exist_ok=True)
             np.save(os.path.join(args.save_init, f"{args.k_qry}shot_{channel_name}_DNCNN_predictions.npy"), dncnn_pred)
             np.save(os.path.join(args.save_init, f"{args.k_qry}shot_{channel_name}_eval_labels.npy"), eval_label)
 
             print(f"[{channel_name}] Predictions (unscaled) saved.")
+            print(f"[{channel_name}] Evaluation loss (scaled): {eval_loss_scaled:.6f}")
             
+            # ---- Calculate MSE in original (unscaled) space ----
+            mse_unscaled = np.mean((dncnn_pred - eval_label) ** 2)
+            mse_real = np.mean((dncnn_pred[..., 0] - eval_label[..., 0]) ** 2)
+            mse_imag = np.mean((dncnn_pred[..., 1] - eval_label[..., 1]) ** 2)
+            
+            print(f"[{channel_name}] MSE (unscaled space):")
+            print(f"  Total: {mse_unscaled:.6e}")
+            print(f"  Real:  {mse_real:.6e}")
+            print(f"  Imag:  {mse_imag:.6e}")
+            
+            # Store results for summary
+            all_mse_results.append({
+                'channel': channel_name,
+                'mse_total': mse_unscaled,
+                'mse_real': mse_real,
+                'mse_imag': mse_imag,
+                'eval_loss_scaled': eval_loss_scaled
+            })
+        
+        # Print summary of all MSE results
+        if all_mse_results:
+            print("\n" + "="*80)
+            print("MSE SUMMARY (Unscaled Space)")
+            print("="*80)
+            print(f"{'Channel':<40} {'Total MSE':>15} {'Real MSE':>15} {'Imag MSE':>15}")
+            print("-"*80)
+            
+            for result in all_mse_results:
+                print(f"{result['channel']:<40} {result['mse_total']:>15.6e} "
+                      f"{result['mse_real']:>15.6e} {result['mse_imag']:>15.6e}")
+            
+            # Calculate and display average MSE
+            avg_mse_total = np.mean([r['mse_total'] for r in all_mse_results])
+            avg_mse_real = np.mean([r['mse_real'] for r in all_mse_results])
+            avg_mse_imag = np.mean([r['mse_imag'] for r in all_mse_results])
+            
+            print("-"*80)
+            print(f"{'AVERAGE':<40} {avg_mse_total:>15.6e} "
+                  f"{avg_mse_real:>15.6e} {avg_mse_imag:>15.6e}")
+            print("="*80)
+            
+            # Save summary to file
+            df_summary = pd.DataFrame(all_mse_results)
+            summary_csv_path = os.path.join(args.save_init, f"ChannelNet_{args.k_qry}shot_mse_summary.csv")
+            df_summary.to_csv(summary_csv_path, index=False)
+            print(f"\nMSE summary saved to: {summary_csv_path}")
+            print()
 
 if __name__ == '__main__':
     argparser = argparse.ArgumentParser()
@@ -279,7 +334,6 @@ if __name__ == '__main__':
     argparser.add_argument('--finetuning_epoch', type=int, help='epochs for fine_tuning', default=25)
     argparser.add_argument('--train_epoch', type=int, help='epoch number for fine-tuning', default=15000)
     argparser.add_argument('--batchsz', type=int, help='batch size', default=8)
-    argparser.add_argument('--n_way', type=int, help='n_task', default=5)
     argparser.add_argument('--k_qry', type=int, help='k shot for query set', default=5)
     argparser.add_argument('--k_spt', type=int, help='k shot for support set', default=5)
     argparser.add_argument('--train_lr', type=float, help='fine-tuning learning rate', default=1e-4)
