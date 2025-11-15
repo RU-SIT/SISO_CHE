@@ -2,6 +2,7 @@ import os
 import sys
 import torch
 import numpy as np
+import pandas as pd
 import argparse
 import pdb
 
@@ -32,6 +33,32 @@ def _to_torch_ch_first(x_np, device):
     x_cf = np.transpose(x_np, (0, 3, 1, 2))
     return torch.from_numpy(x_cf).to(device)
 # -----------------------------------------
+
+
+def _load_minmax_params(save_dir):
+    """
+    Load global min/max scaling parameters saved by ChannelNet.
+    """
+    params_path = os.path.join(save_dir, "minmax_params.npz")
+    if not os.path.exists(params_path):
+        raise FileNotFoundError(
+            f"Cannot find minmax_params.npz in {save_dir}. "
+            "Ensure ChannelNet training has saved the scaling parameters."
+        )
+    data = np.load(params_path)
+    x_params = {
+        "min_real": data["x_min_real"],
+        "max_real": data["x_max_real"],
+        "min_imag": data["x_min_imag"],
+        "max_imag": data["x_max_imag"],
+    }
+    y_params = {
+        "min_real": data["y_min_real"],
+        "max_real": data["y_max_real"],
+        "min_imag": data["y_min_imag"],
+        "max_imag": data["y_max_imag"],
+    }
+    return x_params, y_params
 
 
 def fine_tune(args):
@@ -71,6 +98,9 @@ def fine_tune(args):
     print(f"Fine-tuning channels (unseen): {len(fine_tune_file_names)}")
     print(f"Fine-tuning files: {fine_tune_file_names}")
     print("=" * 60)
+
+    # Load shared scaling parameters (same as ChannelNet fine-tuning)
+    x_params, y_params = _load_minmax_params(args.scaler_dir)
 
     # Determine checkpoint directory based on dataset
     root_parts = args.root.split('/')
@@ -187,38 +217,41 @@ def fine_tune(args):
     
     # Create config with correct batchsz from checkpoint
     config = [
-        ('conv2d', [64, 2, 3, 3, 1, 1]),
-        ('tanh', [True]),
-        ('avg_pool2d', [3, 1, 1]),
-        ('bn', [64]),
-        ('conv2d', [256, 64, 3, 3, 1, 1]),
-        ('tanh', [True]),
-        ('avg_pool2d', [3, 1, 1]),
-        ('bn', [256]),
-        ('conv2d', [512, 256, 3, 3, 1, 1]),
-        ('tanh', [True]),
-        ('avg_pool2d', [3, 1, 1]),
-        ('bn', [512]),
-        ('conv2d', [256, 512, 3, 3, 1, 1]),
-        ('tanh', [True]),
-        ('avg_pool2d', [3, 1, 1]),
-        ('bn', [256]),
-        ('conv2d', [32, 256, 3, 3, 1, 1]),
-        ('tanh', [True]),
-        ('avg_pool2d', [3, 1, 1]),
-        ('bn', [32]),
-        ('conv2d', [training_batchsz, 32, 3, 3, 1, 1]),
-        ('tanh', [True]),
-        ('avg_pool2d', [3, 1, 1]),
-        ('bn', [training_batchsz]),
-        ('conv2d', [2, training_batchsz, 3, 3, 1, 1])
-    ]
+            ('conv2d', [32, 2, 3, 3, 1, 1]),
+            ('tanh', [True]),
+            ('avg_pool2d', [3, 1, 1]),
+            ('bn', [32]),
+            ('conv2d', [128, 32, 3, 3, 1, 1]),
+            ('tanh', [True]),
+            ('avg_pool2d', [3, 1, 1]),
+            ('bn', [128]),
+            ('conv2d', [256, 128, 3, 3, 1, 1]),
+            ('tanh', [True]),
+            ('avg_pool2d', [3, 1, 1]),
+            ('bn', [256]),
+            ('conv2d', [128, 256, 3, 3, 1, 1]),
+            ('tanh', [True]),
+            ('avg_pool2d', [3, 1, 1]),
+            ('bn', [128]),
+            ('conv2d', [32, 128, 3, 3, 1, 1]),
+            ('tanh', [True]),
+            ('avg_pool2d', [3, 1, 1]),
+            ('bn', [32]),
+            ('conv2d', [args.batchsz, 32, 3, 3, 1, 1]),
+            ('tanh', [True]),
+            ('avg_pool2d', [3, 1, 1]),
+            ('bn', [args.batchsz]),
+            ('conv2d', [2, args.batchsz, 3, 3, 1, 1])
+        ]
     
     # Create multigrade MAML model with correct config
     maml_finetuning = MultigradeMAMLStair(training_args, config, num_grades=training_grades).to(device)
     
     maml_finetuning.load_state_dict(checkpoint['state_dict'])
     print(f"✓ Loaded checkpoint successfully")
+
+    # Track MSE for all channels
+    all_mse_results = []
 
     # Fine-tuning loop
     for outer_channel_name in fine_tune_file_names:
@@ -230,17 +263,13 @@ def fine_tune(args):
         x_all = data_dict[outer_channel_name].astype(np.float32)   # [N, H, W, 2]
         y_all = labels_dict[outer_channel_name].astype(np.float32) # [N, H, W, 2]
 
+        # ---- Apply global scaling params (shared with ChannelNet) ----
+        x_all_s = _scale_with_params(x_all, x_params)
+        y_all_s = _scale_with_params(y_all, y_params)
+
         # ---- Split into k-shot pool and eval (no leakage) ----
-        x_pool, y_pool = x_all[:30], y_all[:30]
-        x_eval, y_eval = x_all[30:], y_all[30:]
-
-        # ---- Fit scaler on the pool only, separately for x and y ----
-        x_pool_s, x_params = Utils.standard_scaling(x_pool)   # [-1,1], dict(min/max per RI)
-        y_pool_s, y_params = Utils.standard_scaling(y_pool)   # [-1,1], dict(min/max per RI)
-
-        # ---- Apply same params to eval split ----
-        x_eval_s = _scale_with_params(x_eval, x_params)
-        y_eval_s = _scale_with_params(y_eval, y_params)
+        x_pool_s, y_pool_s = x_all_s[:30], y_all_s[:30]
+        x_eval_s, y_eval_s = x_all_s[30:], y_all_s[30:]
 
         # ---- k-shot subset from the (scaled) pool ----
         x_shot_s, y_shot_s = x_pool_s[:args.k_qry], y_pool_s[:args.k_qry]
@@ -286,13 +315,68 @@ def fine_tune(args):
                                                f"MultigradeMAML_{args.k_qry}shot_{outer_channel_name}_predictions.npy")
         np.save(eval_save_path_unscaled, preds_unscaled)
         print(f"✓ Predictions (unscaled) saved to {eval_save_path_unscaled}")
+        
+        # ---- Calculate MSE in original (unscaled) space ----
+        # Unscale ground truth labels for comparison
+        y_eval_cl = np.transpose(y_eval_t.cpu().numpy(), (0, 2, 3, 1))  # [N, H, W, 2]
+        y_eval_unscaled = Utils.unscale_standard(y_eval_cl, y_params)
+        
+        # Compute MSE in original space
+        mse_unscaled = np.mean((preds_unscaled - y_eval_unscaled) ** 2)
+        
+        # Compute MSE per channel (real and imaginary)
+        mse_real = np.mean((preds_unscaled[..., 0] - y_eval_unscaled[..., 0]) ** 2)
+        mse_imag = np.mean((preds_unscaled[..., 1] - y_eval_unscaled[..., 1]) ** 2)
+        
+        print(f"✓ MSE (unscaled space):")
+        print(f"    Total: {mse_unscaled:.6e}")
+        print(f"    Real:  {mse_real:.6e}")
+        print(f"    Imag:  {mse_imag:.6e}")
+        
+        # Store results for summary
+        all_mse_results.append({
+            'channel': outer_channel_name,
+            'mse_total': mse_unscaled,
+            'mse_real': mse_real,
+            'mse_imag': mse_imag,
+            'eval_loss_scaled': eval_loss
+        })
         print(f"{'='*60}")
 
     print("\n" + "=" * 60)
-    print("🎉 FINE-TUNING COMPLETED!")
+    print(" FINE-TUNING COMPLETED!")
     print("=" * 60)
     print(f"Results saved in: {save_base_dir}")
     print("=" * 60)
+    
+    # Print summary of all MSE results
+    if all_mse_results:
+        print("\n" + "="*80)
+        print("MSE SUMMARY (Unscaled Space)")
+        print("="*80)
+        print(f"{'Channel':<40} {'Total MSE':>15} {'Real MSE':>15} {'Imag MSE':>15}")
+        print("-"*80)
+        
+        for result in all_mse_results:
+            print(f"{result['channel']:<40} {result['mse_total']:>15.6e} "
+                  f"{result['mse_real']:>15.6e} {result['mse_imag']:>15.6e}")
+        
+        # Calculate and display average MSE
+        avg_mse_total = np.mean([r['mse_total'] for r in all_mse_results])
+        avg_mse_real = np.mean([r['mse_real'] for r in all_mse_results])
+        avg_mse_imag = np.mean([r['mse_imag'] for r in all_mse_results])
+        
+        print("-"*80)
+        print(f"{'AVERAGE':<40} {avg_mse_total:>15.6e} "
+              f"{avg_mse_real:>15.6e} {avg_mse_imag:>15.6e}")
+        print("="*80)
+        
+        # Save summary to file
+        df_summary = pd.DataFrame(all_mse_results)
+        summary_csv_path = os.path.join(save_base_dir, f"MultigradeMAML_{args.k_qry}shot_mse_summary.csv")
+        df_summary.to_csv(summary_csv_path, index=False)
+        print(f"\nMSE summary saved to: {summary_csv_path}")
+        print()
 
 
 if __name__ == '__main__':
@@ -305,15 +389,18 @@ if __name__ == '__main__':
                           help='Base directory for saving results (will be extended with dataset name)')
     argparser.add_argument('--step', type=int, default=99, 
                           help='Training step to load checkpoint from (will use last grade checkpoint)')
-    argparser.add_argument('--epoch', type=int, default=50, help='Number of fine-tuning epochs')
+    argparser.add_argument('--epoch', type=int, default=5000, help='Number of fine-tuning epochs')
     argparser.add_argument('--batchsz', type=int, default=8, help='Batch size for fine-tuning')
     argparser.add_argument('--k_qry', type=int, default=5, help='Number of query samples (k-shot for fine-tuning)')
     argparser.add_argument('--k_spt', type=int, default=5, help='Number of support samples')
     argparser.add_argument('--update_lr', type=float, default=1e-3, help='Fine-tuning learning rate')
     argparser.add_argument('--meta_lr', type=float, default=1e-4, help='Meta learning rate (used during training)')
-    argparser.add_argument('--n_way', type=int, default=4, help='Number of classes per task')
+    argparser.add_argument('--n_way', type=int, default=5, help='Number of classes per task')
     argparser.add_argument('--update_step', type=int, default=2, help='Number of inner loop update steps')
     argparser.add_argument('--grades', type=int, default=3, help='Number of grades in multigrade model')
+    argparser.add_argument('--scaler_dir', type=str,
+                          default="/home/rghasemi/Wireless_communication/TDL_updated_model",
+                          help='Directory containing ChannelNet minmax_params.npz for scaling')
 
     args = argparser.parse_args()
     fine_tune(args)
