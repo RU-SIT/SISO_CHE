@@ -1,6 +1,6 @@
 # Few shot Channel Estimation 
 
-Welcome to this repository where we are exploring some new aspects of machine learning in the wireless communication domain. The main focus of this work is SISO-OFDM channel estimation.
+This repository is the paper "Characterizing Failures of Deep-Learning Models Under Data Paucity for Wireless Time-Varying Channel Estimation" implementation.
 
 ## Data and paths
 
