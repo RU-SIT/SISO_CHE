@@ -190,7 +190,6 @@ def ChannelNet(args):
 
     else:
         finetune_file_names = channel_finder(args.root,args.dataset_type)
-        x_params, y_params = _load_minmax_params(args.save_init)
 
         # Track MSE for all channels
         all_mse_results = []
@@ -206,8 +205,12 @@ def ChannelNet(args):
 
             # Prepare data
             data, label = ft_data_loader(args.root, channel_name)
-            data_s = _apply_scaling_with_params(data, x_params)
-            label_s = _apply_scaling_with_params(label, y_params)
+            
+            # Compute per-channel scaling parameters from this channel's data
+            data_s, x_params = Utils.standard_scaling(data)
+            label_s, y_params = Utils.standard_scaling(label)
+            # print(f"  Per-channel scaling computed: X[{float(x_params['min_real']):.3f}, {float(x_params['max_real']):.3f}], "
+            #       f"Y[{float(y_params['min_real']):.3f}, {float(y_params['max_real']):.3f}]")
 
             # k-shot subset
             FT_data, FT_label = data_s[:30], label_s[:30]
@@ -327,10 +330,12 @@ def ChannelNet(args):
             print()
 
 if __name__ == '__main__':
+    from paths import default_dataset_umi_interpolated, default_save_init_umi
+
     argparser = argparse.ArgumentParser()
-    argparser.add_argument('--root', type=str, help='path to processed_data dir', default="/home/rghasemi/Wireless_communication/Sionna_datasets/ps2_p612/speed5/SISO-UMi/interpolated_noleak")
+    argparser.add_argument('--root', type=str, help='path to processed_data dir', default=default_dataset_umi_interpolated())
     argparser.add_argument('--device', type=str, help='device to run the process', default="0")
-    argparser.add_argument('--save_init', type=str, help='path to save directory', default="home/rghasemi/Wireless_communication/SISO_UMi_init/std_scaler_interpolated_noleak")
+    argparser.add_argument('--save_init', type=str, help='path to save directory', default=default_save_init_umi())
     argparser.add_argument('--finetuning_epoch', type=int, help='epochs for fine_tuning', default=25)
     argparser.add_argument('--train_epoch', type=int, help='epoch number for fine-tuning', default=15000)
     argparser.add_argument('--batchsz', type=int, help='batch size', default=8)

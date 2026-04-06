@@ -8,6 +8,15 @@ import subprocess
 import sys
 from datetime import datetime
 
+from paths import (
+    default_combined_task_performance_out,
+    default_inner_loop_tracking_tdl,
+    default_inner_loop_tracking_umi,
+    default_tdl_task_performance_out,
+    default_umi_task_performance_out,
+    repo_root,
+)
+
 def run_analysis_for_dataset(dataset_name, tracking_dir, output_dir):
     """Run task performance analysis for a specific dataset"""
     print(f"\n{'='*60}")
@@ -31,7 +40,7 @@ def run_analysis_for_dataset(dataset_name, tracking_dir, output_dir):
     print(f"Running command: {' '.join(cmd)}")
     
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, cwd='/home/rghasemi/Wireless_communication')
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(repo_root()))
         
         if result.returncode == 0:
             print(f"✅ {dataset_name} analysis completed successfully!")
@@ -55,13 +64,13 @@ def main():
     datasets = [
         {
             'name': 'UMI',
-            'tracking_dir': '/home/rghasemi/Wireless_communication/inner_loop_tracking_data_umi',
-            'output_dir': '/home/rghasemi/Wireless_communication/umi_task_performance_analysis'
+            'tracking_dir': default_inner_loop_tracking_umi(),
+            'output_dir': default_umi_task_performance_out()
         },
         {
             'name': 'TDL', 
-            'tracking_dir': '/home/rghasemi/Wireless_communication/inner_loop_tracking_data_tdl',
-            'output_dir': '/home/rghasemi/Wireless_communication/tdl_task_performance_analysis'
+            'tracking_dir': default_inner_loop_tracking_tdl(),
+            'output_dir': default_tdl_task_performance_out()
         }
     ]
     
@@ -121,7 +130,7 @@ def create_combined_analysis(datasets, successful_analyses):
         import matplotlib.pyplot as plt
         import numpy as np
         
-        combined_dir = '/home/rghasemi/Wireless_communication/combined_task_performance_analysis'
+        combined_dir = default_combined_task_performance_out()
         os.makedirs(combined_dir, exist_ok=True)
         
         # Load results from each dataset

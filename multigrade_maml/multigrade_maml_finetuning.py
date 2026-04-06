@@ -99,9 +99,6 @@ def fine_tune(args):
     print(f"Fine-tuning files: {fine_tune_file_names}")
     print("=" * 60)
 
-    # Load shared scaling parameters (same as ChannelNet fine-tuning)
-    x_params, y_params = _load_minmax_params(args.scaler_dir)
-
     # Determine checkpoint directory based on dataset
     root_parts = args.root.split('/')
     dataset_name_for_path = dataset_name
@@ -263,9 +260,11 @@ def fine_tune(args):
         x_all = data_dict[outer_channel_name].astype(np.float32)   # [N, H, W, 2]
         y_all = labels_dict[outer_channel_name].astype(np.float32) # [N, H, W, 2]
 
-        # ---- Apply global scaling params (shared with ChannelNet) ----
-        x_all_s = _scale_with_params(x_all, x_params)
-        y_all_s = _scale_with_params(y_all, y_params)
+        # ---- Compute per-channel scaling parameters from this channel's data ----
+        x_all_s, x_params = Utils.standard_scaling(x_all)
+        y_all_s, y_params = Utils.standard_scaling(y_all)
+        # print(f"  Per-channel scaling computed: X[{float(x_params['min_real']):.3f}, {float(x_params['max_real']):.3f}], "
+        #       f"Y[{float(y_params['min_real']):.3f}, {float(y_params['max_real']):.3f}]")
 
         # ---- Split into k-shot pool and eval (no leakage) ----
         x_pool_s, y_pool_s = x_all_s[:30], y_all_s[:30]
@@ -380,9 +379,15 @@ def fine_tune(args):
 
 
 if __name__ == '__main__':
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from paths import default_dataset_umi_interpolated, default_tdl_updated_model
+
     argparser = argparse.ArgumentParser(description='Multigrade MAML Fine-tuning')
     argparser.add_argument('--root', type=str, 
-                          default="/home/rghasemi/Wireless_communication/Sionna_datasets/ps2_p612/speed5/SISO-UMi/interpolated_noleak",
+                          default=default_dataset_umi_interpolated(),
                           help='Path to data root directory')
     argparser.add_argument('--device', type=str, default='cuda:0', help='Device to use')
     argparser.add_argument('--save_init', type=str, default="multigrade_maml_results",
@@ -399,7 +404,7 @@ if __name__ == '__main__':
     argparser.add_argument('--update_step', type=int, default=2, help='Number of inner loop update steps')
     argparser.add_argument('--grades', type=int, default=3, help='Number of grades in multigrade model')
     argparser.add_argument('--scaler_dir', type=str,
-                          default="/home/rghasemi/Wireless_communication/TDL_updated_model",
+                          default=default_tdl_updated_model(),
                           help='Directory containing ChannelNet minmax_params.npz for scaling')
 
     args = argparser.parse_args()

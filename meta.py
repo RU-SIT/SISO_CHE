@@ -20,14 +20,14 @@ class Meta(nn.Module):
         self.k_qry = args.k_qry
         self.batchsz =args.batchsz
         self.update_step = args.update_step
-        # self.update_step_test = args.update_step_test
+        # Gradient clipping max norm (default: 1.0, set to None to disable)
+        self.max_grad_norm = getattr(args, 'max_grad_norm', 1.0)
 
         self.net = Learner(config)
         # AdamW is recommended for MAML with CNN architectures
         self.meta_optim = optim.AdamW(self.net.parameters(), lr=self.meta_lr, weight_decay=0.01)
         
-        # Learning rate scheduler for meta optimizer (similar to ChannelNet's ReduceLROnPlateau)
-        # Default: factor=0.5, patience=8, min_lr=1e-7 (can be overridden via args)
+        # Learning rate scheduler for meta optimizer
         scheduler_factor = getattr(args, 'scheduler_factor', 0.5)
         scheduler_patience = getattr(args, 'scheduler_patience', 8)
         scheduler_min_lr = getattr(args, 'scheduler_min_lr', 1e-7)
@@ -35,11 +35,6 @@ class Meta(nn.Module):
             self.meta_optim, mode='min', factor=scheduler_factor, 
             patience=scheduler_patience, min_lr=scheduler_min_lr, verbose=True
         )
-        
-        # Alternative optimizers:
-        # self.meta_optim = optim.RMSprop(self.net.parameters(), lr=self.meta_lr, alpha=0.99, weight_decay=0.01)
-        # self.meta_optim = optim.SGD(self.net.parameters(), lr=self.meta_lr, momentum=0.9, weight_decay=0.01)
-        # self.meta_optim = optim.SparseAdam(self.net.parameters(), lr=self.meta_lr) . #did not work because the gradiant is not sparse
 
     def clip_grad_by_norm_(self, grad, max_norm):
         total_norm = 0
@@ -58,85 +53,95 @@ class Meta(nn.Module):
         return total_norm / counter
 
     def forward(self, x_qry, y_qry, x_spt, y_spt):
-        # x_qry = x_qry.contiguous()
-        # x_spt = x_spt.contiguous()
-        # y_qry = y_qry.contiguous()
-        # y_spt = y_spt.contiguous()
+        """
+        FIXED VERSION of MAML forward pass.
+        
+        Naming convention in this code:
+        - x_qry, y_qry: Data for adaptation (inner loop training)
+        - x_spt, y_spt: Data for evaluation (held-out for meta-learning)
+        
+        Args:
+            x_qry: Query/adaptation set [batch_size, n_way, k_shot, 2, 612, 14]
+            y_qry: Query/adaptation labels [batch_size, n_way, k_shot, 2, 612, 14]
+            x_spt: Support/evaluation set [batch_size, n_way, k_shot, 2, 612, 14]
+            y_spt: Support/evaluation labels [batch_size, n_way, k_shot, 2, 612, 14]
+        """
         
         batchsz, setsz, c_, h, w = x_qry.size()
-        querysz = x_qry.size(1)
+        querysz = x_spt.size(1)  # Use support set size
 
         losses_s = [0 for _ in range(self.update_step + 1)]
 
-        for i in range( self.n_way):
-            # pdb.set_trace()
-            # 1. run the i-th task and compute loss for k=0
+        for i in range(batchsz):
+            # Extract data for task i
             x_qry_i = x_qry[i].view(setsz, c_, h, w)
             y_qry_i = y_qry[i].view(setsz, c_, h, w)
-            logits = self.net(x_qry_i, vars=None, bn_training=True)                   
-            # logits = logits.view(setsz, c_, h, w)
-            loss = F.mse_loss(logits, y_qry_i)
-            grad = torch.autograd.grad(loss, self.net.parameters())
-            fast_weights = list(map(lambda p: p[1] - self.update_lr * p[0], zip(grad, self.net.parameters())))  
+            x_spt_i = x_spt[i].view(querysz, c_, h, w)
+            y_spt_i = y_spt[i].view(querysz, c_, h, w)
             
-            # this is the loss and accuracy before first update
+            
+            # STEP 0: Initial forward pass
+            
+            logits = self.net(x_qry_i, vars=None, bn_training=True)
+            loss = F.mse_loss(logits, y_qry_i)
+            
+            grad = torch.autograd.grad(loss, self.net.parameters(), create_graph=True)
+            fast_weights = list(map(lambda p: p[1] - self.update_lr * p[0], 
+                                   zip(grad, self.net.parameters())))
+            
+            # Evaluate on SUPPORT set before first update (for monitoring)
             with torch.no_grad():
-                x_spt_i = x_spt[i].view(querysz, c_, h, w)
-                y_spt_i = y_spt[i].view(querysz, c_, h, w)
-                logits_s = self.net(x_spt_i, self.net.parameters(), bn_training=True)
-                logits_s = logits_s.view(querysz, c_, h, w) 
+                logits_s = self.net(x_spt_i, self.net.parameters(), bn_training=False)
                 loss_s = F.mse_loss(logits_s, y_spt_i)
                 losses_s[0] += loss_s
 
-            # this is the loss and accuracy after the first update
+            # Evaluate on SUPPORT set after first update (for monitoring)
             with torch.no_grad():
-                logits_s = self.net(x_spt_i, fast_weights, bn_training=True)  
-                logits_s = logits_s.view(querysz, c_, h, w) 
+                logits_s = self.net(x_spt_i, fast_weights, bn_training=False)
                 loss_s = F.mse_loss(logits_s, y_spt_i)
                 losses_s[1] += loss_s
 
+            # INNER LOOP: Additional adaptation steps
+            
             for k in range(1, self.update_step):
-                # print("inner step is {}".format(k))
+                # Adapt on QUERY set (x_qry_i, y_qry_i)
                 logits = self.net(x_qry_i, fast_weights, bn_training=True)
-                logits = logits.view(setsz, c_, h, w)  
                 loss = F.mse_loss(logits, y_qry_i)
-                grad = torch.autograd.grad(loss, fast_weights)
-                fast_weights = list(map(lambda p: p[1] - self.update_lr * p[0], zip(grad, fast_weights)))
+                
+                grad = torch.autograd.grad(loss, fast_weights, create_graph=True)
+                fast_weights = list(map(lambda p: p[1] - self.update_lr * p[0], 
+                                       zip(grad, fast_weights)))
 
-                logits_s = self.net(x_qry_i, fast_weights, bn_training=True)
-                logits_s = logits_s.view(querysz, c_, h, w)  
-                loss_s = F.mse_loss(logits_s, y_qry_i)
+                
+                # This is the key fix - we must evaluate on held-out data
+                logits_s = self.net(x_spt_i, fast_weights, bn_training=False)
+                loss_s = F.mse_loss(logits_s, y_spt_i)
                 losses_s[k + 1] += loss_s
 
+        
+        # META-UPDATE: Update base parameters
+        
+        # Average loss over all tasks
         loss_q = losses_s[-1] / batchsz
 
+        # Compute meta-gradient (differentiates through inner loop!)
         self.meta_optim.zero_grad()
-        loss_q.backward() 
-        # meta update
-        self.meta_optim.step()
+        loss_q.backward()
         
-        # Update learning rate scheduler (step with loss value)
-        # Note: This should be called after optimizer.step() in the training loop
-        # The scheduler will be stepped from the training script with the loss value
+        # Gradient clipping to prevent explosion
+        if self.max_grad_norm is not None and self.max_grad_norm > 0:
+            torch.nn.utils.clip_grad_norm_(self.net.parameters(), self.max_grad_norm)
+        
+        # Meta-update
+        self.meta_optim.step()
 
         return losses_s
-    
-    
     
     
     def finetuning(self, optimizer, data, label, epochs, batchsz, device, save_loss ,patience=10, delta=1e-4, mode = 'train'):
         """
         Fine-tune the network on a single task.
-        :param data: Input data [batchsz, c_, h, w]
-        :param label: Target labels [batchsz, c_, h, w]
-        :param epochs: Number of fine-tuning epochs
-        :param batchsz: Batch size for fine-tuning
-        :param device: Device to run the computations on (CPU/GPU)
-        :return: Final loss after fine-tuning
         """
-        # Create a deepcopy of the network for fine-tuning
-        # net = deepcopy(self.net).to(device)
-        
         scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.9)
 
         self.net.train()
@@ -149,10 +154,10 @@ class Meta(nn.Module):
                 epoch_loss = 0
                 for batch_data, batch_labels in self.batchify(data, label, batchsz):
                     batch_data, batch_labels = batch_data.to(device), batch_labels.to(device)
-                    batch_data, _, _ = Utils.trch_unit_scaling(batch_data, batch_labels)
+                    # batch_data, _, _ = Utils.trch_unit_scaling(batch_data, batch_labels)
                     
                     # Forward pass
-                    logits = self.net(batch_data)
+                    logits = self.net(batch_data, vars=None, bn_training=True)
                     logits = logits.view(batch_data.size())
                     loss = F.mse_loss(logits, batch_labels)
                     
@@ -166,13 +171,13 @@ class Meta(nn.Module):
                 scheduler.step()
 
                 # Log epoch details
-                avg_loss = epoch_loss / len(data)  # Average loss over batches
+                avg_loss = epoch_loss / len(data)
                 epoch_losses.append(avg_loss)
                 print(f"Epoch [{epoch+1}/{epochs}], Loss: {avg_loss:.4f}")
                                         
                 if avg_loss < best_loss - delta:
                     best_loss = avg_loss
-                    epochs_no_improve = 0  # Reset counter
+                    epochs_no_improve = 0
                 else:
                     epochs_no_improve += 1
                     print(f"No improvement for {epochs_no_improve} epoch(s).")
@@ -196,9 +201,9 @@ class Meta(nn.Module):
         with torch.no_grad():
             for batch_data, batch_labels in self.batchify(eval_data, eval_labels, batchsz):
                 batch_data, batch_labels = batch_data.to(device), batch_labels.to(device)
-                batch_data, _, _ = Utils.trch_unit_scaling(batch_data, batch_labels)
+                # batch_data, _, _ = Utils.trch_unit_scaling(batch_data, batch_labels)
 
-                logits = self.net(batch_data)
+                logits = self.net(batch_data, vars=None, bn_training=False)
                 logits = logits.view(batch_data.size())
                 loss = F.mse_loss(logits, batch_labels)
                 eval_loss += loss.item()
@@ -225,8 +230,6 @@ class Meta(nn.Module):
     def predict(self, x):
         """
         Generate predictions for the given input using the current model weights.
-        :param x: Input data [batchsz, c_, h, w]
-        :return: Predicted output [batchsz, c_, h, w]
         """
         with torch.no_grad():
             logits = self.net(x, vars=None, bn_training=False)
@@ -238,3 +241,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

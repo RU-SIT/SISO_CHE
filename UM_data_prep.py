@@ -4,6 +4,8 @@ import h5py
 import numpy as np
 import argparse
 
+from paths import default_dataset_umi_pspacing_17
+
 EPS = 1e-8
 
 
@@ -162,7 +164,7 @@ def parse_args():
     parser.add_argument(
         "--data_dir", 
         type=str, 
-        default="/home/rghasemi/Wireless_communication/Sionna_datasets/ps2_p612/speed5/SISO_pspacing_17/speed5",
+        default=default_dataset_umi_pspacing_17(),
         help="Directory containing data_snr*.hdf5 files"
     )
     

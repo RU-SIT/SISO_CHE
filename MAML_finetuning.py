@@ -90,33 +90,155 @@ def fine_tune(args):
     print(args)
 
     # Define the model configuration
+    # config = [
+    #     ('conv2d', [32, 2, 3, 3, 1, 1]),
+    #     ('tanh', [True]),
+    #     ('avg_pool2d', [3, 1, 1]),
+    #     ('bn', [32]),
+    #     ('conv2d', [128, 32, 3, 3, 1, 1]),
+    #     ('tanh', [True]),
+    #     ('avg_pool2d', [3, 1, 1]),
+    #     ('bn', [128]),
+    #     ('conv2d', [256, 128, 3, 3, 1, 1]),
+    #     ('tanh', [True]),
+    #     ('avg_pool2d', [3, 1, 1]),
+    #     ('bn', [256]),
+    #     ('conv2d', [128, 256, 3, 3, 1, 1]),
+    #     ('tanh', [True]),
+    #     ('avg_pool2d', [3, 1, 1]),
+    #     ('bn', [128]),
+    #     ('conv2d', [32, 128, 3, 3, 1, 1]),
+    #     ('tanh', [True]),
+    #     ('avg_pool2d', [3, 1, 1]),
+    #     ('bn', [32]),
+    #     ('conv2d', [args.batchsz, 32, 3, 3, 1, 1]),
+    #     ('tanh', [True]),
+    #     ('avg_pool2d', [3, 1, 1]),
+    #     ('bn', [args.batchsz]),
+    #     ('conv2d', [2, args.batchsz, 3, 3, 1, 1])
+    # ]
+    # config = [
+    #     ('conv2d', [64, 2, 3, 3, 1, 1]),
+    #     ('tanh', [True]),
+    #     ('avg_pool2d', [3, 1, 1]),
+    #     ('bn', [64]),
+    #     ('conv2d', [256, 64, 3, 3, 1, 1]),
+    #     ('tanh', [True]),
+    #     ('avg_pool2d', [3, 1, 1]),
+    #     ('bn', [256]),
+    #     ('conv2d', [512, 256, 3, 3, 1, 1]),
+    #     ('tanh', [True]),
+    #     ('avg_pool2d', [3, 1, 1]),
+    #     ('bn', [512]),
+    #     ('conv2d', [256, 512, 3, 3, 1, 1]),
+    #     ('tanh', [True]),
+    #     ('avg_pool2d', [3, 1, 1]),
+    #     ('bn', [256]),
+    #     ('conv2d', [32, 256, 3, 3, 1, 1]),
+    #     ('tanh', [True]),
+    #     ('avg_pool2d', [3, 1, 1]),
+    #     ('bn', [32]),
+    #     ('conv2d', [args.batchsz, 32, 3, 3, 1, 1]),
+    #     ('tanh', [True]),
+    #     ('avg_pool2d', [3, 1, 1]),
+    #     ('bn', [args.batchsz]),
+    #     ('conv2d', [2, args.batchsz, 3, 3, 1, 1])
+    # ]
     config = [
-        ('conv2d', [32, 2, 3, 3, 1, 1]),
+        # # SRCNN Layer 1: 9x9 conv, in=2, out=64
+        # ('conv2d', [64, 2, 9, 9, 1, 4]),  # padding=4 to preserve spatial dims
+        # ('tanh', [True]),
+        
+        # # SRCNN Layer 2: 1x1 conv, in=64, out=32
+        # ('conv2d', [32, 64, 1, 1, 1, 0]),  # padding=0 for 1x1 kernel
+        # ('tanh', [True]),
+        
+        # # SRCNN Layer 3: 5x5 conv, in=32, out=2
+        # ('conv2d', [2, 32, 5, 5, 1, 2]),  # padding=2 to preserve spatial dims
+        # ('tanh', [True]),
+        
+        # DNCNN Layer 1 (conv4): 3x3 conv, in=2, out=64
+        ('conv2d', [64, 2, 3, 3, 1, 1]),  # padding=1 to preserve spatial dims
         ('tanh', [True]),
-        ('avg_pool2d', [3, 1, 1]),
-        ('bn', [32]),
-        ('conv2d', [128, 32, 3, 3, 1, 1]),
+        ('bn', [64]),
+        
+        # DNCNN Layers 2-19 (conv5-22): 18 layers of 3x3 conv, in=64, out=64 with BN
+        ('conv2d', [64, 64, 3, 3, 1, 1]),
         ('tanh', [True]),
-        ('avg_pool2d', [3, 1, 1]),
-        ('bn', [128]),
-        ('conv2d', [256, 128, 3, 3, 1, 1]),
+        ('bn', [64]),
+        
+        ('conv2d', [64, 64, 3, 3, 1, 1]),
         ('tanh', [True]),
-        ('avg_pool2d', [3, 1, 1]),
-        ('bn', [256]),
-        ('conv2d', [128, 256, 3, 3, 1, 1]),
+        ('bn', [64]),
+        
+        ('conv2d', [64, 64, 3, 3, 1, 1]),
         ('tanh', [True]),
-        ('avg_pool2d', [3, 1, 1]),
-        ('bn', [128]),
-        ('conv2d', [32, 128, 3, 3, 1, 1]),
+        ('bn', [64]),
+        
+        ('conv2d', [64, 64, 3, 3, 1, 1]),
         ('tanh', [True]),
-        ('avg_pool2d', [3, 1, 1]),
-        ('bn', [32]),
-        ('conv2d', [args.batchsz, 32, 3, 3, 1, 1]),
+        ('bn', [64]),
+        
+        ('conv2d', [64, 64, 3, 3, 1, 1]),
         ('tanh', [True]),
-        ('avg_pool2d', [3, 1, 1]),
-        ('bn', [args.batchsz]),
-        ('conv2d', [2, args.batchsz, 3, 3, 1, 1])
+        ('bn', [64]),
+        
+        ('conv2d', [64, 64, 3, 3, 1, 1]),
+        ('tanh', [True]),
+        ('bn', [64]),
+        
+        ('conv2d', [64, 64, 3, 3, 1, 1]),
+        ('tanh', [True]),
+        ('bn', [64]),
+        
+        ('conv2d', [64, 64, 3, 3, 1, 1]),
+        ('tanh', [True]),
+        ('bn', [64]),
+        
+        ('conv2d', [64, 64, 3, 3, 1, 1]),
+        ('tanh', [True]),
+        ('bn', [64]),
+        
+        ('conv2d', [64, 64, 3, 3, 1, 1]),
+        ('tanh', [True]),
+        ('bn', [64]),
+        
+        ('conv2d', [64, 64, 3, 3, 1, 1]),
+        ('tanh', [True]),
+        ('bn', [64]),
+        
+        ('conv2d', [64, 64, 3, 3, 1, 1]),
+        ('tanh', [True]),
+        ('bn', [64]),
+        
+        ('conv2d', [64, 64, 3, 3, 1, 1]),
+        ('tanh', [True]),
+        ('bn', [64]),
+        
+        ('conv2d', [64, 64, 3, 3, 1, 1]),
+        ('tanh', [True]),
+        ('bn', [64]),
+        
+        ('conv2d', [64, 64, 3, 3, 1, 1]),
+        ('tanh', [True]),
+        ('bn', [64]),
+        
+        ('conv2d', [64, 64, 3, 3, 1, 1]),
+        ('tanh', [True]),
+        ('bn', [64]),
+        
+        ('conv2d', [64, 64, 3, 3, 1, 1]),
+        ('tanh', [True]),
+        ('bn', [64]),
+        
+        ('conv2d', [64, 64, 3, 3, 1, 1]),
+        ('tanh', [True]),
+        ('bn', [64]),
+        
+        # DNCNN Layer 20 (conv23): 3x3 conv, in=64, out=2 (final output)
+        ('conv2d', [2, 64, 3, 3, 1, 1])
     ]
+   
 
     device = torch.device(args.device if torch.cuda.is_available() else 'cpu')
     maml_finetuning = Meta(args, config).to(device)
@@ -125,8 +247,6 @@ def fine_tune(args):
     labels_dict = np.load(os.path.join(args.root, 'channel_label_dict.npy'), allow_pickle=True).item()
 
     fine_tune_file_names = list(data_dict.keys())[10:]  
-
-    x_params, y_params = _load_minmax_params(args.scaler_dir)
 
     # Track MSE for all channels
     all_mse_results = []
@@ -137,11 +257,12 @@ def fine_tune(args):
         # ---- Load channel data ----
         x_all = data_dict[outer_channel_name].astype(np.float32)   # [N, H, W, 2]
         y_all = labels_dict[outer_channel_name].astype(np.float32) # [N, H, W, 2]
-        # pdb.set_trace()
-        # ---- Load global scaling parameters (shared with ChannelNet) ----
-        # ---- Apply scaling using shared parameters ----
-        x_all_s = _scale_with_params(x_all, x_params)
-        y_all_s = _scale_with_params(y_all, y_params)
+        
+        # ---- Compute per-channel scaling parameters from this channel's data ----
+        x_all_s, x_params = Utils.standard_scaling(x_all)
+        y_all_s, y_params = Utils.standard_scaling(y_all)
+        # print(f"  Per-channel scaling computed: X[{float(x_params['min_real']):.3f}, {float(x_params['max_real']):.3f}], "
+        #       f"Y[{float(y_params['min_real']):.3f}, {float(y_params['max_real']):.3f}]")
 
         # ---- Split into k-shot pool and eval (no leakage) ----
         x_pool_s, y_pool_s = x_all_s[:30], y_all_s[:30]
@@ -262,10 +383,16 @@ def fine_tune(args):
         print()
 
 if __name__ == '__main__':
+    from paths import (
+        default_dataset_umi_interpolated,
+        default_save_init_umi,
+        default_tdl_updated_model,
+    )
+
     argparser = argparse.ArgumentParser()
-    argparser.add_argument('--root', type=str, default="/home/rghasemi/Wireless_communication/Sionna_datasets/ps2_p612/speed5/SISO-UMi/interpolated_noleak")
+    argparser.add_argument('--root', type=str, default=default_dataset_umi_interpolated())
     argparser.add_argument('--device', type=str, default='cuda:0')
-    argparser.add_argument('--save_init', type=str, default="/home/rghasemi/Wireless_communication/SISO_UMi_init/std_scaler_interpolated_noleak")
+    argparser.add_argument('--save_init', type=str, default=default_save_init_umi())
     argparser.add_argument('--step', type=int, default=5000)
     argparser.add_argument('--epoch', type=int, default=5000)
     argparser.add_argument('--batchsz', type=int, default=8)
@@ -276,7 +403,7 @@ if __name__ == '__main__':
     argparser.add_argument('--n_way', type=int, default=5)
     argparser.add_argument('--update_step', type=int, default=3)
     argparser.add_argument('--scaler_dir', type=str,
-                           default="/home/rghasemi/Wireless_communication/TDL_updated_model",
+                           default=default_tdl_updated_model(),
                            help='Directory containing ChannelNet minmax_params.npz for scaling')
 
     args = argparser.parse_args()

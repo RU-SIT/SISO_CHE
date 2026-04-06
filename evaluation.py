@@ -456,33 +456,6 @@ def load_multigrade_maml(args, channel_name, k_shot, device="cpu"):
     training_update_lr = checkpoint.get('update_lr', args.update_lr)
     
     # Create config with correct batchsz
-    config = [
-        ('conv2d', [64, 2, 3, 3, 1, 1]),
-        ('tanh', [True]),
-        ('avg_pool2d', [3, 1, 1]),
-        ('bn', [64]),
-        ('conv2d', [256, 64, 3, 3, 1, 1]),
-        ('tanh', [True]),
-        ('avg_pool2d', [3, 1, 1]),
-        ('bn', [256]),
-        ('conv2d', [512, 256, 3, 3, 1, 1]),
-        ('tanh', [True]),
-        ('avg_pool2d', [3, 1, 1]),
-        ('bn', [512]),
-        ('conv2d', [256, 512, 3, 3, 1, 1]),
-        ('tanh', [True]),
-        ('avg_pool2d', [3, 1, 1]),
-        ('bn', [256]),
-        ('conv2d', [32, 256, 3, 3, 1, 1]),
-        ('tanh', [True]),
-        ('avg_pool2d', [3, 1, 1]),
-        ('bn', [32]),
-        ('conv2d', [training_batchsz, 32, 3, 3, 1, 1]),
-        ('tanh', [True]),
-        ('avg_pool2d', [3, 1, 1]),
-        ('bn', [training_batchsz]),
-        ('conv2d', [2, training_batchsz, 3, 3, 1, 1])
-    ]
     
     # Simple args class for MultigradeMAMLStair
     class TrainingArgs:
@@ -535,23 +508,23 @@ def load_models_for_channel_kshot(args, channel_name, k_shot, device="cpu",
     if enable_maml:
         from meta import Meta
         config = [
-            ('conv2d', [64, 2, 3, 3, 1, 1]),
+            ('conv2d', [32, 2, 3, 3, 1, 1]),
             ('tanh', [True]),
             ('avg_pool2d', [3, 1, 1]),
-            ('bn', [64]),
-            ('conv2d', [256, 64, 3, 3, 1, 1]),
+            ('bn', [32]),
+            ('conv2d', [128, 32, 3, 3, 1, 1]),
             ('tanh', [True]),
             ('avg_pool2d', [3, 1, 1]),
-            ('bn', [256]),
-            ('conv2d', [512, 256, 3, 3, 1, 1]),
-            ('tanh', [True]),
-            ('avg_pool2d', [3, 1, 1]),
-            ('bn', [512]),
-            ('conv2d', [256, 512, 3, 3, 1, 1]),
+            ('bn', [128]),
+            ('conv2d', [256, 128, 3, 3, 1, 1]),
             ('tanh', [True]),
             ('avg_pool2d', [3, 1, 1]),
             ('bn', [256]),
-            ('conv2d', [32, 256, 3, 3, 1, 1]),
+            ('conv2d', [128, 256, 3, 3, 1, 1]),
+            ('tanh', [True]),
+            ('avg_pool2d', [3, 1, 1]),
+            ('bn', [128]),
+            ('conv2d', [32, 128, 3, 3, 1, 1]),
             ('tanh', [True]),
             ('avg_pool2d', [3, 1, 1]),
             ('bn', [32]),

@@ -153,7 +153,7 @@ def create_summary_report(args):
         f.write("  - Consistent improvement across different channel appearances\n")
         f.write("  - Low variance in loss distributions\n\n")
         
-        f.write("❌ Poor Learning Indicators:\n")
+        f.write(" Poor Learning Indicators:\n")
         f.write("  - Flat or increasing loss curves\n")
         f.write("  - High variance in loss distributions\n")
         f.write("  - Inconsistent learning across channel appearances\n\n")

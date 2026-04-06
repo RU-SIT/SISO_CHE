@@ -1,0 +1,80 @@
+# --- Local environment / editor ---
+.cache/
+.cursor-server/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+.bash_history
+.bash_logout
+.bashrc
+.profile
+
+# --- Secrets (never commit) ---
+mykey.pub
+*.pem
+.env
+
+# --- Large data & generated outputs (keep code only on GitHub) ---
+data.mat
+*.hdf5
+Sionna_datasets/
+data/
+results/
+inner_loop_tracking_data*/
+prediction_plots_comparison/
+combined_steps_box_plots*/
+early_stopping_models_tdl/
+inner_analysis_results*/
+tracking/
+backup/
+home/
+
+# --- Large vendored copies / datasets ---
+sionna/
+CeBed/datasets/
+CeBed/train_output*/
+CeBed/train_output_*/
+
+# --- Model checkpoints (use Git LFS or release assets) ---
+*.keras
+*.h5
+*.weights.h5
+*.pth
+*.pth.tar
+DNCNN_pretrained_init.pth.tar
+
+# --- Local numpy / plot artifacts at repo root ---
+channel_*dict.npy
+rx_signal_dict.npy
+tx_signal_dict.npy
+mse_vs_snr.png
+umi_mse_snr.png
+mse_results*.csv
+tdl_*shot_results.csv
+umi_*shot_results.csv
+tdl_occurrence_analysis/
+umi_occurrence_analysis/
+tdl_task_performance_analysis/
+umi_task_performance_analysis/
+
+# --- imaml_dev generated outputs ---
+imaml_dev/examples/SISO_UMi_init_imaml/
+imaml_dev/examples/inner_loop_tracking_umi_imaml/
+imaml_dev/examples/5_way_1_shot_exp1/
+imaml_dev/examples/simple_analysis_results/
+imaml_dev/examples/imaml_umi_analysis_results/
+
+# --- Local checkpoints & large experiment trees (not for GitHub) ---
+MD_updated_models/
+SISO_UMi_init/
+SISO_UMi_P_spacing_variations/
+TDL_updated_model/
+TDL_init/
+TDL_FinalMAML_init/
+TDL_initstd_scaler_experiments/
+Wireless_iMAML/
+MD_datexperiment_SISO/
+MD_complex_channel/
+multigrade_maml/innerloop_tracking/
+multigrade_maml/multigrade_maml_results/
+multigrade_maml/__pycache__/

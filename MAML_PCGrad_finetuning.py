@@ -198,9 +198,6 @@ def fine_tune(args):
     print(f"Channels to fine-tune: {fine_tune_file_names}")
     print()
 
-    # Load scaling parameters
-    x_params, y_params = _load_minmax_params(args.scaler_dir)
-
     # Load PCGrad-trained checkpoint
     ckpt_dir = os.path.join(args.save_init, f"meta_pcgrad_model_nway_{args.n_way}")
     
@@ -246,9 +243,11 @@ def fine_tune(args):
         
         print(f"  Data shape: {x_all.shape}")
 
-        # ---- Apply scaling using shared parameters ----
-        x_all_s = _scale_with_params(x_all, x_params)
-        y_all_s = _scale_with_params(y_all, y_params)
+        # ---- Compute per-channel scaling parameters from this channel's data ----
+        x_all_s, x_params = Utils.standard_scaling(x_all)
+        y_all_s, y_params = Utils.standard_scaling(y_all)
+        # print(f"  Per-channel scaling computed: X[{float(x_params['min_real']):.3f}, {float(x_params['max_real']):.3f}], "
+        #       f"Y[{float(y_params['min_real']):.3f}, {float(y_params['max_real']):.3f}]")
 
         # ---- Split into k-shot pool and eval (no leakage) ----
         x_pool_s, y_pool_s = x_all_s[:30], y_all_s[:30]
@@ -375,21 +374,27 @@ def fine_tune(args):
 
 
 if __name__ == '__main__':
+    from paths import (
+        default_dataset_tdl_interpolated,
+        default_save_init_tdl_pcgrad,
+        default_tdl_updated_model,
+    )
+
     argparser = argparse.ArgumentParser(
         description='Fine-tune PCGrad-trained MAML model on unseen channels'
     )
     
     # Data arguments
     argparser.add_argument('--root', type=str,
-                          default="/home/rghasemi/Wireless_communication/Sionna_datasets/ps2_p612/speed5/SISO-TDL/interpolated_noleak",
+                          default=default_dataset_tdl_interpolated(),
                           help='Path to dataset directory')
     argparser.add_argument('--device', type=str, default='cuda:0',
                           help='Device to use (cuda:0, cuda:1, or cpu)')
     argparser.add_argument('--save_init', type=str,
-                          default="/home/rghasemi/Wireless_communication/SISO_TDL_init/pcgrad_std_scaler_interpolated_noleak",
+                          default=default_save_init_tdl_pcgrad(),
                           help='Directory containing PCGrad-trained checkpoints')
     argparser.add_argument('--scaler_dir', type=str,
-                          default="/home/rghasemi/Wireless_communication/TDL_updated_model",
+                          default=default_tdl_updated_model(),
                           help='Directory containing ChannelNet minmax_params.npz for scaling')
     
     # Training arguments

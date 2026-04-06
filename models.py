@@ -173,7 +173,9 @@ def DNCNN_train(train_data, train_label, bsize, n_epoch):
 def fine_tune_DNCNN(new_train_data, new_train_label):
     # Load the pre-trained model
     dncnn_model = DNCNN_model()
-    dncnn_model.load_weights(f"/home/CAMPUS/rghasemi/projects/related_papers/ChannelNet/DNCNN_final_model.keras")
+    from paths import channelnet_dncnn_keras
+
+    dncnn_model.load_weights(channelnet_dncnn_keras())
     
     # Fine-tune the model on unseen data
     checkpoint = ModelCheckpoint("DNCNN_fine_tuned_model.keras", monitor='val_loss', save_best_only=False, save_weights_only=False, mode='auto', verbose=1)

@@ -27,6 +27,7 @@ class MultigradeMAMLStair(nn.Module):
         self.batchsz = args.batchsz
         self.update_step = args.update_step
         self.num_grades = num_grades
+        self.current_channel_names = []
         
         # Create a single Learner network (same as original MAML)
         self.net = Learner(config)
@@ -166,6 +167,30 @@ class MultigradeMAMLStair(nn.Module):
         
         return x
     
+    def set_channel_names(self, channel_names):
+        processed_names = []
+        if isinstance(channel_names, (list, tuple, np.ndarray)):
+            for entry in channel_names:
+                if isinstance(entry, (list, tuple, np.ndarray)):
+                    if len(entry) > 0:
+                        processed_names.append(str(entry[0]))
+                    else:
+                        processed_names.append("unknown_channel")
+                else:
+                    processed_names.append(str(entry))
+        else:
+            processed_names.append(str(channel_names))
+        # Reduce duplicates by taking first occurrence of each block of k_spt entries
+        if len(processed_names) >= self.n_way * self.k_spt:
+            condensed = []
+            for i in range(self.n_way):
+                idx = i * self.k_spt
+                if idx < len(processed_names):
+                    condensed.append(processed_names[idx])
+            self.current_channel_names = condensed
+        else:
+            self.current_channel_names = processed_names
+
     def forward(self, x_qry, y_qry, x_spt, y_spt, current_grade=None):
         """
         Multigrade MAML forward pass with stair-like architecture
@@ -186,6 +211,7 @@ class MultigradeMAMLStair(nn.Module):
         
         # Store losses for each grade
         losses_s = {}
+        grade_channel_losses = {grade_idx: [] for grade_idx in range(self.num_grades)}
         for grade_idx in range(self.num_grades):
             losses_s[grade_idx] = [0 for _ in range(self.update_step + 1)]
         
@@ -197,7 +223,10 @@ class MultigradeMAMLStair(nn.Module):
             y_spt_i = y_spt[i].view(querysz, c_, h, w)
             
             # Train only the specified grades
+            channel_name = self.current_channel_names[i] if i < len(self.current_channel_names) else f"channel_{i}"
+
             for grade_idx in grades_to_train:
+                channel_step_losses = []
                 # Get parameters for this grade
                 grade_params = self._get_grade_parameters(grade_idx)
                 
@@ -210,19 +239,21 @@ class MultigradeMAMLStair(nn.Module):
                 
                 # This is the loss before first update (on support set)
                 with torch.no_grad():
-                    logits_s = self.net(x_spt_i, vars=None, bn_training=True)
+                    logits_s = self.net(x_spt_i, vars=None, bn_training=False)
                     logits_s = logits_s.view(querysz, c_, h, w)
                     loss_s = F.mse_loss(logits_s, y_spt_i)
                     losses_s[grade_idx][0] += loss_s
+                    channel_step_losses.append(loss_s.detach().item())
                 
                 # This is the loss after the first update (on support set)
                 with torch.no_grad():
                     # Create updated vars with fast weights for this grade
                     updated_vars = self._update_vars_with_fast_weights(grade_idx, fast_weights)
-                    logits_s = self.net(x_spt_i, vars=updated_vars, bn_training=True)
+                    logits_s = self.net(x_spt_i, vars=updated_vars, bn_training=False)
                     logits_s = logits_s.view(querysz, c_, h, w)
                     loss_s = F.mse_loss(logits_s, y_spt_i)
                     losses_s[grade_idx][1] += loss_s
+                    channel_step_losses.append(loss_s.detach().item())
                 
                 # Inner loop updates
                 for k in range(1, self.update_step):
@@ -240,6 +271,16 @@ class MultigradeMAMLStair(nn.Module):
                     logits_s = logits_s.view(querysz, c_, h, w)
                     loss_s = F.mse_loss(logits_s, y_spt_i)
                     losses_s[grade_idx][k + 1] += loss_s
+                    channel_step_losses.append(loss_s.detach().item())
+
+                # Ensure consistent length
+                if channel_step_losses:
+                    while len(channel_step_losses) < self.update_step + 1:
+                        channel_step_losses.append(channel_step_losses[-1])
+                    grade_channel_losses[grade_idx].append({
+                        'channel_name': channel_name,
+                        'step_losses': channel_step_losses
+                    })
         
         # Meta-update using the final losses
         # Only update the grades that were trained
@@ -253,7 +294,7 @@ class MultigradeMAMLStair(nn.Module):
         loss_q.backward()
         self.meta_optim.step()
         
-        return losses_s
+        return losses_s, grade_channel_losses
     
     def finetuning(self, optimizer, data, label, epochs, batchsz, device, save_loss, 
                    patience=10, delta=1e-4, mode='train'):

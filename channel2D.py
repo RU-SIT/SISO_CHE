@@ -81,7 +81,14 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process channel .mat files and save as .npy")
-    parser.add_argument('--input_dir', type=str, default="MyPrivaterepo/data", help='Directory containing the .mat files')
+    from paths import repo_root
+
+    parser.add_argument(
+        '--input_dir',
+        type=str,
+        default=str(repo_root() / "data"),
+        help='Directory containing the .mat files',
+    )
     parser.add_argument('--output_dir', type=str, default="new_data", help='Directory to save the output .npy files')
     
     args = parser.parse_args()

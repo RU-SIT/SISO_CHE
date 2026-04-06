@@ -205,9 +205,9 @@ def plot_abs_error(gt, preds, shot, channel, out_dir, sample_idx=0):
     
 def main():
     p = argparse.ArgumentParser()
-    # p.add_argument('--root',      default="/home/CAMPUS/rghasemi/projects/MyPrivaterepo/new_data")
-    # p.add_argument('--save_init', default="/home/CAMPUS/rghasemi/projects/MyPrivaterepo/saved_init")
-    # p.add_argument('--imaml',     default="/home/CAMPUS/rghasemi/projects/MyPrivaterepo/Wireless_iMAML")
+    # p.add_argument('--root',      default="/path/to/new_data")
+    # p.add_argument('--save_init', default="/path/to/saved_init")
+    # p.add_argument('--imaml',     default="/path/to/Wireless_iMAML")
     p.add_argument('--root',      default="Sionna_datasets/ps2_p612/speed5/SISO-UMi")
     p.add_argument('--save_init', default="SISO_UMi_init")
     p.add_argument('--imaml',     default="SISO_UMi_init")

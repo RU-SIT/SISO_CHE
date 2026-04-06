@@ -14,41 +14,39 @@ import matplotlib.pyplot as plt
 import argparse
 import csv
 from pathlib import Path
+import pdb
+from paths import (
+    default_dataset_umi_pspacing,
+    default_prediction_plots_dir,
+    default_tdl_init_dir,
+    model_paths_plot,
+)
 
 # Set random seed for reproducibility (optional)
 np.random.seed(42)
 #TOD: plot GT disribution
 
 
-# Define paths for each model
-MODEL_PATHS = {
-    'TDL': {
-        'MAML': '/home/rghasemi/Wireless_communication/TDL_updated_model/meta_model_nway_4/adamW_v1/meta_model_nway_4',
-        'iMAML': '/home/rghasemi/Wireless_communication/TDL_updated_model/meta_model_nway_4',
-        'ChannelNet': '/home/rghasemi/Wireless_communication/TDL_updated_model',
-        'MultigradeMAML': '/home/rghasemi/Wireless_communication/multigrade_maml/multigrade_maml_results/TDL/finetuning'
-    },
-    'UMi': {
-        'MAML': '/home/rghasemi/Wireless_communication/MD_updated_models/LOS/speed_15/adamW_v2/meta_model_nway_5',
-        'iMAML': '/home/rghasemi/Wireless_communication/MD_updated_models/LOS/speed_15/IMAML/100_innerstep/meta_model_nway_4',
-        'ChannelNet': '/home/rghasemi/Wireless_communication/MD_updated_models/LOS/speed_15',
-        'MultigradeMAML': '/home/rghasemi/Wireless_communication/multigrade_maml/multigrade_maml_results/UMi/finetuning'
-    }
-}
+# Define paths for each model (portable; see paths.py / README)
+MODEL_PATHS = model_paths_plot()
 
 # File naming patterns for each model
 FILE_PATTERNS = {
     'TDL': {
-        'MAML': '*MAML_5_shot_train_data_{channel_model}_predictions.npy',
+        # 'MAML': '*MAML_5_shot_train_data_{channel_model}_predictions.npy',
         'iMAML': '*wireless_IMAML_5_shot_LAM3.0_train_data_{channel_model}_predictions.npy',
         'ChannelNet': '*5shot_train_data_{channel_model}_DNCNN_predictions.npy',
-        'MultigradeMAML': '*MultigradeMAML_5shot_train_data_{channel_model}_predictions.npy'
+        'MultigradeMAML': '*MultigradeMAML_5shot_train_data_{channel_model}_predictions.npy',
+        # 'tiny_MAML': '*MAML_5_shot_train_data_{channel_model}_predictions.npy',
+        # 'SNR_MAML': '*MAML_5_shot_train_data_{channel_model}_predictions.npy',
+        'CG_MAML': '*MAML_5_shot_train_data_{channel_model}_predictions.npy',
     },
     'UMi': {
-        'MAML': '*MAML_5_shot_data_snr5.hdf5_predictions.npy',
+        # 'MAML': '*MAML_5_shot_data_snr5.hdf5_predictions.npy',
         'iMAML': '*wireless_IMAML_5_shot_LAM3.0_data_snr5.hdf5_predictions.npy',
         'ChannelNet': '*5shot_data_snr5.hdf5_DNCNN_predictions.npy',
-        'MultigradeMAML': '*MultigradeMAML_5shot_data_snr5.hdf5_predictions.npy'
+        'MultigradeMAML': '*MultigradeMAML_5shot_data_snr5.hdf5_predictions.npy',
+        # 'tiny_MAML': '*MAML_5_shot_data_snr5.hdf5_predictions.npy'
     }
 }
 
@@ -59,7 +57,7 @@ def find_prediction_file(channel_type, model_name, channel_model=None):
     
     Args:
         channel_type: 'TDL' or 'UMi'
-        model_name: 'MAML', 'iMAML', 'ChannelNet', or 'MultigradeMAML'
+        model_name: 'MAML', 'iMAML', 'ChannelNet', 'MultigradeMAML', 'tiny_MAML', or 'SNR_MAML'
         channel_model: Channel model identifier (e.g., 'MAXDopS_50_DS_3e-7_SNR_0db_mod_16QAM_TDL-A')
                        Required for TDL, optional for UMi
     
@@ -75,12 +73,14 @@ def find_prediction_file(channel_type, model_name, channel_model=None):
         if channel_model is None:
             raise ValueError("channel_model is required for TDL experiments")
         pattern = FILE_PATTERNS[channel_type][model_name].format(channel_model=channel_model)
+        # pdb.set_trace()
     else:  # UMi
         pattern = FILE_PATTERNS[channel_type][model_name]
     
     # Search for files matching the pattern
     search_path = os.path.join(base_path, pattern)
     matches = glob.glob(search_path)
+    # pdb.set_trace()
     
     if matches:
         # For UMi ChannelNet, prefer 5shot over 15shot
@@ -119,24 +119,15 @@ def load_predictions(file_path):
 
 
 def find_ground_truth_file(channel_type, channel_model=None):
-    """Find ground truth (eval_labels) file for a given channel model."""
+    """Find ground truth (channel_label_dict.npy) file for a given channel model."""
     if channel_type == 'TDL':
-        if channel_model is None:
-            return None
-        # Look for eval_labels file in ChannelNet directory
-        base_path = MODEL_PATHS['TDL']['ChannelNet']
-        pattern = f'*{channel_model}*eval_labels.npy'
-        search_path = os.path.join(base_path, pattern)
-        matches = glob.glob(search_path)
-        if matches:
-            return matches[0]
+        gt_path = os.path.join(default_tdl_init_dir(), 'channel_label_dict.npy')
+        if os.path.exists(gt_path):
+            return gt_path
     else:  # UMi
-        base_path = MODEL_PATHS['UMi']['ChannelNet']
-        pattern = '*eval_labels.npy'
-        search_path = os.path.join(base_path, pattern)
-        matches = glob.glob(search_path)
-        if matches:
-            return matches[0]
+        gt_path = os.path.join(default_dataset_umi_pspacing(), 'channel_label_dict.npy')
+        if os.path.exists(gt_path):
+            return gt_path
     return None
 
 
@@ -148,39 +139,24 @@ def find_input_from_channel_data_dict(channel_type, channel_model=None, root_dir
     Args:
         channel_type: 'TDL' or 'UMi'
         channel_model: Channel model identifier (required for TDL)
-        root_dir: Root directory containing channel_data_dict.npy
+        root_dir: Root directory containing channel_data_dict.npy (optional, uses default paths if None)
+        umi_root_dir: UMi root directory (optional, uses default path if None)
     
     Returns:
         Input data array (N, H, W, 2) or None if not found
     """
-    if root_dir is None:
-        # Try to find the channel_data_dict.npy file in common locations
-        if channel_type == 'TDL':
-            possible_dirs = [
-                '/home/rghasemi/Wireless_communication/TDL_init',
-                '/home/rghasemi/Wireless_communication',
-                os.path.dirname(MODEL_PATHS['TDL']['ChannelNet'])
-            ]
-        else:  # UMi
-            if umi_root_dir is not None:
-                possible_dirs = [umi_root_dir]
-            else:
-                possible_dirs = [
-                    '/home/rghasemi/Wireless_communication/MD_datexperiment_SISO/NlOS_updated/ps2_p153/speed15/p_spacing4/nointerp',
-                    '/home/rghasemi/Wireless_communication',
-                    os.path.dirname(MODEL_PATHS['UMi']['ChannelNet'])
-                ]
-        
-        root_dir = None
-        for dir_path in possible_dirs:
-            if os.path.exists(os.path.join(dir_path, "channel_data_dict.npy")):
-                root_dir = dir_path
-                break
-        
-        if root_dir is None:
-            return None
+    # Use specific paths provided by user
+    if channel_type == 'TDL':
+        channel_data_dict_path = os.path.join(default_tdl_init_dir(), 'channel_data_dict.npy')
+    else:  # UMi
+        channel_data_dict_path = os.path.join(default_dataset_umi_pspacing(), 'channel_data_dict.npy')
     
-    channel_data_dict_path = os.path.join(root_dir, "channel_data_dict.npy")
+    # Allow override with root_dir parameter
+    if root_dir is not None:
+        channel_data_dict_path = os.path.join(root_dir, "channel_data_dict.npy")
+    elif umi_root_dir is not None and channel_type == 'UMi':
+        channel_data_dict_path = os.path.join(umi_root_dir, "channel_data_dict.npy")
+    
     if not os.path.exists(channel_data_dict_path):
         return None
     
@@ -226,6 +202,7 @@ def find_input_from_channel_data_dict(channel_type, channel_model=None, root_dir
                 return None
             
             input_data = x_dict[channel_key]
+            # pdb.set_trace()
             # Slice from index 30 onwards
             if input_data.ndim == 4:
                 input_data = input_data[30:]
@@ -267,6 +244,7 @@ def per_sample_mse_split(pred_cl, gt_cl):
     mse_r  = np.mean(diff_r * diff_r, axis=(1, 2))
     mse_i  = np.mean(diff_i * diff_i, axis=(1, 2))
     mse    = mse_r + mse_i
+    
     return mse, mse_r, mse_i
 
 
@@ -309,7 +287,7 @@ def discover_channel_models(channel_type):
     """
     if channel_type == 'TDL':
         # Find all TDL channel models by looking at MAML prediction files
-        maml_path = MODEL_PATHS['TDL']['MAML']
+        maml_path = MODEL_PATHS['TDL']['CG_MAML']
         if not os.path.exists(maml_path):
             return []
         
@@ -333,13 +311,12 @@ def discover_channel_models(channel_type):
         return None
 
 
-def plot_all_channel_models(channel_type, num_samples=100, output_dir=None, root_dir=None, umi_root_dir=None):
+def plot_all_channel_models(channel_type, output_dir=None, root_dir=None, umi_root_dir=None):
     """
     Plot predictions for all available channel models.
     
     Args:
         channel_type: 'TDL' or 'UMi'
-        num_samples: Number of samples to plot
         output_dir: Directory to save plots (default: current directory)
     """
     if output_dir is None:
@@ -366,7 +343,6 @@ def plot_all_channel_models(channel_type, num_samples=100, output_dir=None, root
             plot_predictions(
                 channel_type=channel_type,
                 channel_model=channel_model,
-                num_samples=num_samples,
                 save_path=save_path,
                 root_dir=root_dir,
                 umi_root_dir=umi_root_dir
@@ -380,7 +356,6 @@ def plot_all_channel_models(channel_type, num_samples=100, output_dir=None, root
         plot_predictions(
             channel_type=channel_type,
             channel_model=None,
-            num_samples=num_samples,
             save_path=save_path,
             root_dir=root_dir,
             umi_root_dir=umi_root_dir
@@ -388,7 +363,7 @@ def plot_all_channel_models(channel_type, num_samples=100, output_dir=None, root
         print(f"\n✓ Plot saved to: {save_path}")
 
 
-def plot_predictions(channel_type, channel_model=None, num_samples=100, save_path=None, root_dir=None, umi_root_dir=None):
+def plot_predictions(channel_type, channel_model=None, save_path=None, root_dir=None, umi_root_dir=None):
     """
     Plot predictions from all four models for a given channel model.
     Follows the plotting style from evaluation.py.
@@ -399,7 +374,11 @@ def plot_predictions(channel_type, channel_model=None, num_samples=100, save_pat
         num_samples: Number of samples to plot (for visualization)
         save_path: Path to save the figure
     """
-    model_names = ['MAML', 'iMAML', 'ChannelNet', 'MultigradeMAML']
+    # Define model names based on channel type
+    if channel_type == 'TDL':
+        model_names = ['iMAML', 'ChannelNet', 'MultigradeMAML',  "CG_MAML", ]
+    else:  # UMi
+        model_names = ['iMAML', 'ChannelNet', 'MultigradeMAML',]
     
     # Find all prediction files
     prediction_files = {}
@@ -427,12 +406,78 @@ def plot_predictions(channel_type, channel_model=None, num_samples=100, save_pat
     first_model = list(predictions_data.keys())[0]
     first_pred = predictions_data[first_model]
     
-    # Load ground truth
+    # Load ground truth from channel_label_dict.npy
     gt_file = find_ground_truth_file(channel_type, channel_model)
     gt_data = None
     if gt_file:
         print(f"Found ground truth: {gt_file}")
-        gt_data = load_predictions(gt_file)
+        try:
+            # Load the dictionary
+            gt_dict = np.load(gt_file, allow_pickle=True).item()
+            
+            if channel_type == 'TDL':
+                if channel_model is None:
+                    print("Warning: channel_model is required for TDL ground truth")
+                else:
+                    # Extract channel model name from the full identifier
+                    # Keys in dict have "train_data_" prefix, e.g., "train_data_MAXDopS_50_DS_3e-7_SNR_0db_mod_16QAM_TDL-A.mat"
+                    # channel_model is "MAXDopS_50_DS_3e-7_SNR_0db_mod_16QAM_TDL-A.mat"
+                    channel_key = None
+                    
+                    # First try exact match with "train_data_" prefix
+                    train_data_key = f"train_data_{channel_model}"
+                    if train_data_key in gt_dict:
+                        channel_key = train_data_key
+                    else:
+                        # Try without .mat extension
+                        channel_model_no_ext = channel_model.replace('.mat', '')
+                        train_data_key_no_ext = f"train_data_{channel_model_no_ext}"
+                        if train_data_key_no_ext in gt_dict:
+                            channel_key = train_data_key_no_ext
+                        else:
+                            # Try to find by matching the unique part (e.g., TDL-A, TDL-C, etc.)
+                            for key in gt_dict.keys():
+                                if 'TDL-A' in channel_model and 'TDL-A' in key:
+                                    channel_key = key
+                                    break
+                                elif 'TDL-C' in channel_model and 'TDL-C' in key:
+                                    channel_key = key
+                                    break
+                                elif 'TDL-D' in channel_model and 'TDL-D' in key:
+                                    channel_key = key
+                                    break
+                                elif 'TDL-E' in channel_model and 'TDL-E' in key:
+                                    channel_key = key
+                                    break
+                    
+                    if channel_key is not None:
+                        gt_data = gt_dict[channel_key]
+                        print(f"Found GT data for key '{channel_key}' with shape {gt_data.shape}")
+                        # Slice from index 30 onwards (same as input)
+                        if gt_data.ndim == 4:
+                            gt_data = gt_data[30:]
+                        else:
+                            gt_data = gt_data[30:]
+                        print(f"GT data after slicing: shape {gt_data.shape}")
+                    else:
+                        print(f"Warning: Could not find channel model '{channel_model}' in ground truth dictionary")
+                        print(f"Available keys in GT dictionary: {list(gt_dict.keys())[:5]}...")  # Show first 5 keys
+            else:  # UMi
+                # For UMi, typically use the last key
+                keys = list(gt_dict.keys())
+                if keys:
+                    channel_key = keys[-1]
+                    gt_data = gt_dict[channel_key]
+                    # Slice from index 30 onwards (same as input)
+                    if gt_data.ndim == 4:
+                        gt_data = gt_data[30:]
+                    else:
+                        gt_data = gt_data[30:]
+                else:
+                    print("Warning: Ground truth dictionary is empty")
+        except Exception as e:
+            print(f"Error loading ground truth from {gt_file}: {e}")
+            gt_data = None
     else:
         print("Warning: Could not find ground truth file")
     
@@ -451,6 +496,19 @@ def plot_predictions(channel_type, channel_model=None, num_samples=100, save_pat
     else:
         print("Warning: Could not find input data from channel_data_dict.npy")
     
+    # Ensure GT data has the same shape as predictions (if available)
+    if gt_data is not None:
+        if gt_data.shape != first_pred.shape:
+            print(f"Warning: GT shape {gt_data.shape} doesn't match predictions shape {first_pred.shape}")
+            # Try to match the number of samples
+            if gt_data.shape[0] > first_pred.shape[0]:
+                gt_data = gt_data[:first_pred.shape[0]]
+                print(f"GT data trimmed to match predictions: shape {gt_data.shape}")
+            elif gt_data.shape[0] < first_pred.shape[0]:
+                print(f"Warning: GT has fewer samples ({gt_data.shape[0]}) than predictions ({first_pred.shape[0]})")
+        else:
+            print(f"GT data shape matches predictions: {gt_data.shape}")
+    
     # Check if data is complex (N, H, W, 2)
     if first_pred.ndim != 4 or first_pred.shape[-1] != 2:
         print(f"Error: Expected predictions with shape (N, H, W, 2), got {first_pred.shape}")
@@ -463,10 +521,13 @@ def plot_predictions(channel_type, channel_model=None, num_samples=100, save_pat
     
     # Prepare arrays dict in the format expected by evaluation.py style plotting
     arrays_dict = {
-        "MAML": predictions_data.get("MAML"),
+        # "MAML": predictions_data.get("MAML"),
         "iMAML": predictions_data.get("iMAML"),
         "ChannelNet": predictions_data.get("ChannelNet"),
         "MultigradeMAML": predictions_data.get("MultigradeMAML"),
+        # "tiny_MAML": predictions_data.get("tiny_MAML"),
+        "CG_MAML": predictions_data.get("CG_MAML"),
+        # "SNR_MAML": predictions_data.get("SNR_MAML"),
         "Input": input_data,
         "GT": gt_data,
     }
@@ -500,7 +561,10 @@ def plot_predictions(channel_type, channel_model=None, num_samples=100, save_pat
         vmax_i = first_available[random_sample_idx, ..., 1].max()
     
     # Define column order: models + Input + GT
-    cols = ["MAML", "iMAML", "ChannelNet", "MultigradeMAML", "Input", "GT"]
+    if channel_type == 'TDL':
+        cols = [ "iMAML", "ChannelNet", "MultigradeMAML", "CG_MAML", "Input", "GT"]
+    else:  # UMi
+        cols = ["iMAML", "ChannelNet", "MultigradeMAML", "Input", "GT"]
     arrs = [arrays_dict.get(k) for k in cols]
     
     # Create figure with main image plot (2 rows for real/imag) and distribution plots below
@@ -767,20 +831,20 @@ def main():
     parser.add_argument(
         '--output_dir',
         type=str,
-        default="/home/rghasemi/Wireless_communication/prediction_plots_comparison",
+        default=default_prediction_plots_dir(),
         help='Directory to save plots when using --plot_all (default: current directory)'
     )
     parser.add_argument(
         '--root_dir',
         type=str,
-        default="/home/rghasemi/Wireless_communication/TDL_init",
+        default=default_tdl_init_dir(),
         help='Root directory containing channel_data_dict.npy (default: auto-detect)'
     )
     
     parser.add_argument(
         '--umi_root_dir',
         type=str,
-        default="/home/rghasemi/Wireless_communication/Sionna_datasets/ps2_p612/speed5/SISO_pspacing_4/speed5/interpolated_noleak",
+        default=default_dataset_umi_pspacing(),
         help='Root directory containing channel_data_dict.npy (default: auto-detect)'
     )
     
@@ -818,7 +882,6 @@ def main():
         print("=" * 60)
         plot_all_channel_models(
             channel_type='TDL',
-            num_samples=args.num_samples,
             output_dir=args.output_dir,
             root_dir=args.root_dir,
             umi_root_dir=args.umi_root_dir
@@ -830,7 +893,6 @@ def main():
         print("=" * 60)
         plot_all_channel_models(
             channel_type='UMi',
-            num_samples=args.num_samples,
             output_dir=args.output_dir,
             root_dir=args.umi_root_dir
         )
@@ -850,7 +912,6 @@ def main():
     plot_predictions(
         channel_type=args.channel_type,
         channel_model=args.channel_model,
-        num_samples=args.num_samples,
         save_path=args.save_path,
         root_dir=args.root_dir,
         umi_root_dir=args.umi_root_dir
