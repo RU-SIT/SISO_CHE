@@ -6,6 +6,8 @@ Welcome to this repository where we are exploring some new aspects of machine le
 
 Download the data [here](https://drive.google.com/drive/folders/10hIn854d219OhhC7hLnUOUD_6revp3U1?usp=sharing), then place it under this repository (for example `Sionna_datasets/...` at the project root) **or** point the scripts to your folders using environment variables.
 
+This repository is meant to hold **source code only**. Generated plots (`.png`, etc.), result tables (`.csv`), NumPy dumps (`.npy`, `.npz`), and model checkpoints are listed in `.gitignore` and are not pushed to GitHub.
+
 Portable defaults are defined in `paths.py`. Common overrides:
 
 | Variable | Meaning |

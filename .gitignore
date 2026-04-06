@@ -41,9 +41,28 @@ CeBed/train_output_*/
 *.weights.h5
 *.pth
 *.pth.tar
+*.ckpt
+*.safetensors
+*.onnx
+*.pb
+*.joblib
 DNCNN_pretrained_init.pth.tar
 
-# --- Local numpy / plot artifacts at repo root ---
+# --- Plots, tables, and serialized arrays (keep repo to source code only) ---
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.webp
+*.csv
+*.tsv
+*.npy
+*.npz
+*.feather
+*.parquet
+
+# --- Local numpy / plot artifacts at repo root (covered by patterns above; kept for clarity) ---
 channel_*dict.npy
 rx_signal_dict.npy
 tx_signal_dict.npy
